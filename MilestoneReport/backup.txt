@@ -1,0 +1,263 @@
+---
+title: "N-Gram Text Prediction Capstone Project "
+subtitle: "For Coursera Data Science Specialization"
+author: "Oli Bailey"
+date: "20th August, 2020"
+output:
+  html_document:
+    theme: readable
+    toc: yes
+    smaller: yes
+    number_sections: true
+    toc_float: true
+---
+
+```{r, options_chunk, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(fig.width=6, fig.height=6, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
+setwd("C:/Users/oli.bailey/Documents/MyStuff/Stats/Coursera/DSS/10. Datascience Capstone/Milestone Report")
+```
+
+```{r, load_libs}
+library(tidyverse) # for wrangling and visualization
+library(tidytext) # for text mining
+```
+
+```{r, utility_functions}
+# Create custom %notin% operator
+`%notin%` <- Negate(`%in%`)
+
+# Desired size in MB of each of the three corpora
+desired_corp_MB <- 5 
+
+load_file <- function(fp) {
+  f <- readLines(fp)
+  close(fp)
+  return(f)
+}
+
+get_MB <- function(obj) {
+   s <- format(object.size(obj), units = "Mb")
+   return(parse_number(s))
+}
+
+get_ngram <- function(doc, n = 2) {
+  df <- data.frame(text=doc)
+  ngrams <- df %>%
+    unnest_tokens(ngram, text, token = "ngrams", n = n)
+
+  return(ngrams %>% count(ngram, sort = TRUE))
+}
+
+# just a sample list of words I don't care about:
+stop_words_common <- c('a', 'and', 'for', 'the', 'to', 'it')
+stop_words_profanity <- c('fuck','shit','cunt','twat','motherfucker')
+
+
+
+create_dict <- function(doc, stop_words=stop_words_profanity) {
+  data_frame(text = doc) %>% 
+    #mutate(text = tolower(text)) %>%  # DONE WHEN FILE LOADED
+    mutate(text = str_remove_all(text, '[\\.,><?!"£\\$%\\^&\\*_;:\\(\\)]')) %>% 
+    mutate(tokens = str_split(text, "\\s+")) %>%
+    unnest() %>% 
+    count(tokens) %>%
+    mutate(freq = n / sum(n)) %>% 
+    arrange(desc(n)) -> dict_freq
+  if (!is.null(stop_words)) {
+    # Remove stop words from data. This can include profanity.
+    dict_freq %>%
+      filter(!tokens %in% stop_words) -> dict_freq
+  }
+  return(dict_freq)
+}
+
+```
+# Introduction
+Around the world, people are spending an increasing amount of time on their mobile devices for email, social networking, banking and a whole range of other activities. But typing on mobile devices can be a serious pain. When someone types:
+
+*I went to the*
+
+the keyboard presents three options for what the next word might be. For example, the three words might be *gym, store, restaurant*.
+
+This project report is part of a larger project to design a text prediction system that could be run efficiently on a mobile device.
+
+Here we consider only an initial analysis a large corpus of text documents  cleaning and analyzing text data, leading up to the building and sampling from a predictive text model in future project work. 
+
+# Ultra Brief NLP Oveview
+Natural Language Processing (NLP) combines knowledge from linguistics, computer science, statistics and machine learning disciplines, and concerns the interactions between computers and humans (see Wikipedia https://en.wikipedia.org/wiki/Natural_language_processing). NLP covers a wide range of uses from classification of documents, sentiment analysis, chatbots, and text prediction, amongst many other.
+
+Some basic and common steps or techniques used in NLP applications are
+
+* Sentence detection - breaking up text data into seperate sentences.
+
+* Tokenization -  splitting sentences in parts, typically words.
+
+* Chunking - Deriving logical concepts from the tagged tokens within a sentence.
+
+* Part-of-speech (POS) tagging - Tokens (words) are assigned as noun, verb, adjective, adverb etc.
+
+* Entity Identification/Extraction - people, locations, events, etc are extracted from the text chunks.
+
+In our application of text prediction, issues we migth face in the analysis and processing of the data are the use of colloquial or slang language  - especially from social media sources - and incorrect punctuation, as well as poor spelling. 
+
+# N-Gram Text Prediction
+Our text prediction model is based on using a very large amount of "example" text mined from various online sources, from which we can identify common patterns or phrases that occur. These patterns or phrases here consist of groups of 1,2 or 3 words (called "n-grams") that frequently appear together.
+
+This is the basis of our prediction - the user types, we search for short phrases that contain the last few words inputted by the user, and we present the most "likely" next three choices.
+
+## File Summaries
+For this project we are using a set of text documents, or *corpora*, provided by HC Corpora (http://www.corpora.heliohost.org). A readme file here http://www.corpora.heliohost.org/aboutcorpus.html provides details about these corpora. 
+
+The Coursera dataset (CAUTION: > 500MB!!) analyzed for this report is available here: https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip. 
+
+This set of files have had meta tags about source, date, time, etc. removed, so are purely lines of text that can be read in using readLines() for example. The files in this corpora have been filtered for language, but they may still contain some foreign language words.  
+
+**NOTE: This data set included files in American-English, Russian, Finnish and German. Only the American-English language files are considered in this project.**
+
+### Size, line and word counts
+There are three input files from these sources:
+
+* News - factual, as well as plain-word text these contain many numbers, prices, costs, email addresses, URLs
+* Blogs - language that is more personal, opinion and personal experience with less "clutter"
+* Twitter - short colections of a handful of sentences, containing a large proportion of slang
+
+A summary of the raw files sizes, the object size in R, and the word and line counts is given below:
+
+| File            | File Size | Object Size (R) | Lines Count | Word Count |
+|-----------------|-----------|-----------------|-------------|------------|
+|en_US.blogs.txt  | 200.4 MB  |   253.1 MB      | 899,289     | 31,073,343 |
+|en_US.news.txt   | 196.3 MB  |   19.7 MB       | 1,010,243   | 35,628,125 |
+|en_US.twitter.txt| 159.4 MB  |   317.7 MB      | 2,360,150   | 31,073,243 |
+
+NOTE: The line and word counts were found using Notepad++.
+
+These files are very large. Given that we are targeting to run our prediction app on a mobile platform,
+I will aim to randomly sample lines totalling 2MB from each of the three files, and combine into one corpus of about 6MB for the remaining analysis. 6MB should be a reasonable size to generate our ngram frequency dictionaries from, and these can be further reduced by dropping very low frequency entries.
+
+## Initial Data Preparation
+We need to sample a smaller set from these three files, combine to one, and then process by removing punctuation, foul words, etc, before we can derive n-gram frequency counts for this input text.
+
+## Combine and take sample of full data
+First, we'll randomly sample 2MB from each input file, and combine:
+```{r, sample_and_combine_files, warning=false}
+# Load raw input files
+blogs <- load_file(file("en_US/en_US.blogs.txt"))
+news <- load_file(file("en_US/en_US.news.txt"))
+twitter <- load_file(file("en_US/en_US.twitter.txt"))
+
+# Sample 2MB from each
+desired_size_MB <- 2
+
+set.seed(1)
+reduction_factor <- get_MB(blogs) / desired_size_MB
+blogs <- sample(blogs,floor(length(blogs)/reduction_factor))
+format(object.size(blogs), units="Mb")
+
+set.seed(2)
+reduction_factor <- get_MB(news) / desired_size_MB
+news <- sample(news,floor(length(news)/reduction_factor))
+format(object.size(news), units="Mb")
+
+set.seed(3)
+reduction_factor <- get_MB(twitter) / desired_size_MB
+twitter <- sample(twitter,floor(length(twitter)/reduction_factor))
+format(object.size(twitter), units="Mb")
+```
+To give a flavour of the content, here are samples of each file:
+
+### Samples {.tabset}
+
+#### News
+```{r}
+set.seed(4)
+sample_n(data.frame(news),3)
+```
+#### Blogs
+```{r}
+set.seed(5)
+sample_n(data.frame(blogs),3)
+```
+#### Twitter
+```{r}
+set.seed(6)
+sample_n(data.frame(twitter),6)
+```
+
+As you can see, the raw text contain emoticons, numbers, unicode, slang, and so on.
+
+### Remove punctuation
+We will not try to perform any spelling correction or detection of foreign words, but will simply remove punctuation like parentheses, colons, semicolons, whilst leaving apostrophes and hyphens in place, as many words are hyphenated as would lose meaning or context if we strip out all hyphens.
+
+### Ignore non-words and convert to lower case
+We will also ignore all non-alphabetic tokens like prices, urls, emails etc, and convert all text to lower case. This does mean our predictions will all be lower case, so proper nouns like people's names and place names would be in lower case if predicted.
+
+
+### Remove foul words
+We could write our own list of foul words to remove, but we'd have to consider all stems and forms of each word. Easier it to use a pre-existing list, which can be found online e.g. http://www.bannedwordlist.com/lists/swearWords.txt which contains 77 very common uncouth, crude or rude words on which we don't want to make predictions.
+
+```{r, remove_punctuation_and_foul_words, warning=FALSE, message=FALSE}
+combined <- data.frame(text = c(news,blogs,twitter))
+
+banned_words = readLines(file("http://www.bannedwordlist.com/lists/swearWords.txt"))
+
+remove_punct_and_foul <- function(doc, stop_words=banned_words) {
+  data_frame(text = doc) %>% 
+    mutate(text = tolower(text)) %>%
+    mutate(text = str_remove_all(text, '[\\.,><?!"£\\$%\\^&\\*_;:\\(\\)]')) %>% 
+    #mutate(tokens = str_split(text, "\\s+")) %>%
+    #unnest() %>% 
+    #count(tokens) %>%
+    #mutate(freq = n / sum(n)) %>% 
+    #arrange(desc(n)) -> dict_freq
+  
+  # Remove stop words from data. This can include profanity.
+    filter(text %notin% stop_words) -> processed
+  return(processed)
+}
+
+combined <- remove_punct_and_foul(combined)
+```
+# Exploratory Analysis
+
+## Single Word  (1-gram) Frequencies 
+
+## 2-gram and 3-gram Frequencies
+
+# Next Steps
+
+## Create N-gram Tables
+
+## Split train and test data
+
+## Train model
+
+## Test model
+
+## Code for this report
+The code used to generate this report is available on github
+[here](https://github.com/threefeetdeep/TBD).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
