@@ -11,13 +11,13 @@ http://threefeetdeep.shinyapps.io/?
 Project top level folder structure and information about data files:
 |
 |  
-|--- Data - output data from the creation of ngram tables, to be used by the prediction app
+|--- Data - output data from the creation of ngram tables, to be used by the prediction app<br>
 |  
-|--- App - the UI/Server code for Shiny Text Prediction App 
+|--- App - the UI/Server code for Shiny Text Prediction App<br>
 |  
-|--- Code - the R code used to develop the prediction function used by the Shiny App
+|--- Code - the R code used to develop the prediction function used by the Shiny App<br>
 |  
-|--- SlidePresentation - a slide deck to introduce and promote the Shiny App
+|--- SlidePresentation - a slide deck to introduce and promote the Shiny App<br>
 |  
 |---  MileStone Report - the initial breifing on the early study of the input text data used as the basis of the prediction model
   
