@@ -13,7 +13,7 @@ Project top level folder structure and information about data files:
 |  
 |--- Data - output data from the creation of ngram tables, to be used by the prediction app
 |  
-|--- App - the UI/Server code for Shiny Text Prediction App - start typing, and the app will offer likely suggestions for the next word to ease you typing burden!
+|--- App - the UI/Server code for Shiny Text Prediction App 
 |  
 |--- Code - the R code used to develop the prediction function used by the Shiny App
 |  
