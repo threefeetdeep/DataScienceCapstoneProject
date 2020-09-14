@@ -1,0 +1,212 @@
+---
+title: 'N-Gram Text Prediction Model '
+author: "Oli Bailey"
+date: "1st September, 2020"
+output:
+  html_document:
+    theme: sandstone
+  pdf_document: default
+subtitle: 'Task 4: Prediction Model'
+---
+
+```{r, knitr_setup, cache=FALSE, include=FALSE}
+library(knitr)
+rm(list=ls())
+opts_knit$set(root.dir='C:\\Users\\oli.bailey\\Documents\\MyStuff\\Stats\\Coursera\\DSS\\10. Datascience Capstone\\PredictionModel')
+knitr::opts_chunk$set(fig.width=6, fig.height=6, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
+
+options(width = 160)
+options(xtable.comment = FALSE)
+options(knitr.table.format = "pipe")
+
+outputType <- "html"
+gc()
+# Clear knitr cache when regenerating afresh 
+```
+
+This time, we'll convert to data tables to gain some speed when searching the ngram tables, so we load the data.table package as well here:
+```{r, load_libs, message=FALSE, warning=FALSE}
+library(tidyverse)  # for reading, wrangling, visualizing, string manipulation
+library(qdap)       # for unigram dictionary check (to remove Twitter slang etc.)
+library(tidytext)   # for ngrams
+library(stringi)    # for sentence extraction
+library(magrittr)   # for concise code with pipes
+library(data.table) # for faster search on ngram tables
+```
+
+These are  utility functions used by the rest of the script below:
+```{r, utility}
+# file handling
+load_file <- function(file_name) {
+  fp <- file(file_name)
+  f <- readLines(fp)
+  #f <- iconv(f, "latin1", "ASCII", sub="")
+  f <- iconv(f, "UTF-8", "ASCII")
+  close(fp)
+  return(f)
+}
+
+# Check a single word
+is.word  <- function(x) x %in% c(GradyAugmented)
+
+# convert words not in our vocab to "unkwn" token (Character vector  input version)
+convert_oov <- function(words_to_check) {
+  ifelse(words_to_check %in% vocab$text, words_to_check,"unkwn")
+}
+
+# convert words not in our vocab to "unkwn" token (songel string input version)
+convert_oov_string <- function(string_in) {
+  as_vector <- word_split(string_in)[[1]]
+  oov_checked <- convert_oov(as_vector)
+  
+  # recombine to string
+  string_out <- paste(oov_checked, collapse = " ")
+  
+  return(string_out)
+}
+
+# Functions to strip out subsets of words from a string from the user or the test files
+get_last_n_words <- function(s,n) {
+  str_to_lower(word(s, -n, -1))
+}
+
+get_first_n_words <- function(s,n) {
+  str_to_lower(word(s, 1, n))
+}
+
+get_m_to_nth_words <- function(s,m,n) {
+  str_to_lower(word(s, m, n))
+}
+
+
+# Get the size of an object in MB
+get_MB <- function(obj) {
+  format(object.size(obj),units="Mb")
+}
+
+add_k_smoothing <- function(b,k,V=nrow(vocab)) {
+  # V is the vocab count of words in our vocabulary
+  # k is the smoothing "fraction" to use 0 < k < 1
+  # b is the input bigram row
+  # p_addk(wn | wn-1) = (C(wn-1,wn) + k)/(sum(C(wn-1,w))+ kV)
+  sum_n <- sum(bigrams$n[bigrams$head==b$head])
+  if (dim(b)[1]==0) {
+    p_addk <- k/(sum_n + k*V)
+  } else {
+    p_addk <- (b$n + k)/(sum_n + k*V)
+  }
+  
+  return(p_addk)
+}
+```
+
+
+
+# Task 4 - Prediction Model
+The goal of this exercise is to build and evaluate your first predictive model. You will use the n-gram and backoff models you built in previous tasks to build and evaluate your predictive model. The goal is to make the model efficient and accurate.
+
+## Tasks to accomplish
+
+* Build a predictive model based on the previous data modeling steps - you may combine the models in any way you think is appropriate.
+* Evaluate the model for efficiency and accuracy - use timing software to evaluate the computational complexity of your model. Evaluate the model accuracy using different metrics like perplexity, accuracy at the first word, second word, and third word.
+
+## Questions to consider
+
+* How does the model perform for different choices of the parameters and size of the model?
+* How much does the model slow down for the performance you gain?
+* Does perplexity correlate with the other measures of accuracy?
+* Can you reduce the size of the model (number of parameters) without reducing performance?
+
+# My Model
+I'll use a simple combination of "stupid back-off" and "add-k smoothing" for my predictions, using trigrams and lower. Future revisions of the model can include higher ngrams e.g quadgram (n=4) and pentagram (n=5), as well as more advanced smoothing/discounting strategies.
+
+For this initial version of the model, we are trying to achieve speed and low memory requirements above accuracy.
+
+
+First, load the reduced size n-gram tables (trigrams, bigrams, vocab variables):
+```{r, load_ngrams}
+load("en_US/ngrams.rdat")
+
+# add probabilites to vocab (unigrams)
+vocab %<>% mutate(prob=n/sum(n))
+```
+
+We will use sentences from the test set to test prediction accuracy of our model(s). Load the test set, and take a peek:
+```{r, load_test_set}
+load("en_US/test_corpus.rdat")
+sample(test_corpus$text,4)
+```
+
+For testing our prediction model, we need a function that takes a sentence, and makes predictions on each word in turn, then compares how many we predicted correctly, e.g. if **ANY** of the 3 words we predict match the actual word. This is likely to be 5-15% or so only, but even this equates to a saving for the user of having to spell out maybe one or two words in every sentence they type, on average.
+
+## Procedure
+For the first word of a sentence, we'll simply offer the top three most common start words (excluding the "unkwn" token). 
+```{r, most_common_start_words}
+start_words <- read.csv("en_US/sentence_start_words.txt")
+
+# remove "unkwn" token words
+start_words %<>% filter(WORD!="unkwn")
+head(start_words)
+```
+```{r, predict_start_words}
+
+sentence_start_predict <- function(num=3) {
+  # FUNCTION to return the top n start words for a sentence
+  vocab %>% 
+    filter(text %in% start_words$WORD[1:num]) %>%
+    select(text,prob) -> predictions
+  return(predictions)
+}
+
+sentence_start_predict(num = 5)
+```
+
+For the second, we'll search for a matching bigram, backing off to the most common 3 unigrams if not match is found.
+
+For the third word onwards, we look for any matching trigrams, giving them precedence over bigrams and unigrams. We back off until we have 3 predictions for the next word.
+
+We rank the prediction first by ngram order, then by probability. Note, for bigram probabililties. we'll apply add-k smoothing with k=0.05 to give zero-frequency bigrams some probability, as long as the second word is in our vocabulary, and is not "unkwn".
+
+```{r}
+predictor <- function(phrase, num=3) {
+  # FUNCTION to predict top num words given the input phrase
+  # This model uses trigram/bigram/unigram back off
+  
+  # Keep only the last two words of the phrase
+  last_two <- get_last_n_words(phrase,2)
+  last_one <- get_last_n_words(phrase,1)
+  
+  # Replace out-of-vocab words with "unkwn" token
+  last_two <- convert_oov_string(last_two)
+  last_one <- convert_oov(last_one)
+
+  prediction_table <- NULL
+  # Find top n matching trigrams if at least one of last two words is not unknown
+  if (last_two != "unkwn unkwn") {
+    trigrams %>% 
+      filter(head==last_two, pred != "unkwn") %>% 
+      head(num) -> prediction_table
+  } else if (last_one != "unkwn") {
+    # Find a matching bigram for the last word, as long as it's not unknown
+    bigrams %>% 
+      filter(head=last_one, pred != "unkwn") %>%
+      head(num) -> bi_table
+      prediction_table <- rbind(prediction_table, bi_table)
+  } else {
+    # unigram prediction from vocab
+    vocab %>% 
+      filter(text != "unkwn") %>%
+      head(num) -> uni_table
+    return(list(prediction_table, uni_table))
+  }
+  return(prediction_table)
+
+}
+  
+
+predictor("over my dead",10)
+```
+
+
+

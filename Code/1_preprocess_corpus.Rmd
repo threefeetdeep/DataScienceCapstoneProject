@@ -1,0 +1,144 @@
+---
+title: 'N-Gram Text Prediction Model '
+author: "Oli Bailey"
+date: "September, Year Of The Virus"
+output:
+  html_document:
+    theme: sandstone
+  pdf_document: default
+subtitle: 'Step 1. Clean the three input texts'
+---
+
+
+## NOTES:
+
+This script conerns itself with the reading in to RAM of the very large "corpus" of three input files, and cleaning these texts before we create the ngram tables in the next file.
+
+The output files are based on a 25% sample of the entire input corpus.
+
+```{r, load_libs, message=FALSE, warning=FALSE}
+library(dplyr)      # for wrangling
+library(magrittr)   # for piping
+library(qdap)       # for "GradyAugmented" dictionary check to remove non-english words
+library(stringi)    # for sentence extraction
+library(stringr)    # for cleaning
+
+# remove any previous variables (clean start)
+rm(list = ls())
+gc()
+```
+
+```{r, utility_functions}
+# file handling
+load_file <- function(file_name) {
+  fp <- file(file_name)
+  f <- readLines(fp)
+  # remove non-ASCII characters
+  f <- iconv(f, "UTF-8", "ASCII")
+  close(fp)
+  return(f)
+}
+
+# Check a single word
+data("GradyAugmented")
+is.word  <- function(x) x %in% c(GradyAugmented)
+```
+
+Load ALL files  to RAM (~500MB of R object memory)
+```{r, load_files, warning=FALSE, message=FALSE}
+# we assume the input files are in ./_InputCorpus/ folder relative to this file
+# please modify this to suit your folder layout...
+blogs <- load_file("../_InputCorpus/en_US.blogs.txt")
+news <- load_file("../_InputCorpus/en_US.news.txt")
+twitter <- load_file("../_InputCorpus/en_US.twitter.txt")
+```
+
+We will base our prediction model on a 25% sample of these files.
+```{r, sample_mixture}
+desired_percentage <- 25  # of total object sizes in sample
+
+set.seed(123)
+reduction_factor <-  desired_percentage / 100
+blogs <- sample(blogs,ceiling(length(blogs) * reduction_factor))
+
+set.seed(345)
+reduction_factor <-  desired_percentage / 100
+news <- sample(news,ceiling(length(news) * reduction_factor))
+
+set.seed(678)
+reduction_factor <-  desired_percentage / 100
+twitter <- sample(twitter,ceiling(length(twitter) *reduction_factor))
+
+# create combined sample corpus
+corpus <- c(blogs,news,twitter)
+
+# release memory
+rm (blogs, news, twitter)
+gc()
+```
+
+Now we want to "clean" the corpus, removing sentences containing foul words, removing misspelled words, and handling both American-English spelling and British-English e.g. color/colour, favorite/favourite.
+```{r process_corpus}
+# one sentence per row
+corpus <- unlist(stri_split_boundaries(corpus, type="sentence"))
+corpus <- tibble(text = corpus)
+
+# all words to lower case
+# remove most common foul words (ignoring the effect on remaining meaning) 
+# remove punctuation (EXCEPT ' and - e.g. "i'm double-barelled")
+con = file("http://www.bannedwordlist.com/lists/swearWords.txt")
+banned_words = c("motherfucker", readLines(con))
+close(con)
+
+# convert to lower case, remove punctuation (except hyphens and apostrophes)
+corpus %<>%
+    mutate(text = tolower(text)) %>%
+    mutate(text = str_remove_all(text, '[#~0-9\\.,><?!"£\\@$%\\^&\\*_;:\\(\\)]')) %>%
+    mutate(text = stri_replace_all(str=text, 
+                                   replacement = "unkwn", 
+                                   regex= paste(banned_words, collapse = "|"))) 
+
+# remove NA lines
+corpus <- corpus[!is.na(corpus)]
+
+# add line number into corpus
+corpus <- tibble(line_no=1:length(corpus), text = corpus)
+
+# split corpus to words 
+# NOTE: this would convert to lower case and removes punctuation if we hadn't done so already!
+words <- corpus %>% tidytext::unnest_tokens(text, text)
+
+# remove misspelled words (dictionary check) [NOT RECOMMENDED! SEE NOTES]
+#words <- words[is.word(words$text),]
+
+# rebuild corpus 
+corpus <- words %>% 
+    group_by(line_no) %>% 
+    summarize(text = str_c(text, collapse = " ")) %>%
+    ungroup()
+
+# remove sentences of only one word (they have no use in our model!)
+corpus %<>% filter(stri_count_words(text) > 1)
+
+# remove a 2% chunk of our corpus to use for testing
+set.seed(2021)
+inTest <- sample(1:nrow(corpus), floor(nrow(corpus)*0.02))
+test_corpus <- corpus[inTest,]
+corpus <- corpus[-inTest,]
+
+# remove another small chunk (1%) of the corpus as our "held-out"
+# corpus for tuning lambda interpolation hyperparameter (TBD: FUTURE REVISION)
+inHeldOut <-sample(1:nrow(corpus), floor(nrow(corpus)*0.05))
+held_out_corpus <- corpus[inHeldOut,]
+corpus <- corpus[-inHeldOut,]
+
+
+# save training, held-out and test corpora
+save(corpus, file="../Data/train_corpus_25.rdat")
+save(test_corpus, file="../Data/test_corpus_25.rdat")
+save(held_out_corpus, file="../Data/held_out_corpus_25.rdat")
+
+```
+
+So now we have three files, with "corpus" containing most of the data, to be used
+to create the ngram tables in the file "create_ngram_tables.Rmd"

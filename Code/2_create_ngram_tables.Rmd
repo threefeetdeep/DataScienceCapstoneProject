@@ -1,0 +1,226 @@
+---
+title: 'N-Gram Text Prediction Model '
+author: "Oli Bailey"
+date: "September, Year Of The Virus"
+output:
+  html_document:
+    theme: sandstone
+  pdf_document: default
+subtitle: 'Step 2. Create Ngram Tables'
+---
+
+## NOTES:
+
+This script concerns itself with the creation of trigram, bigram and unigram frequency tables based on our main training corpus generated in the previsou file, "preprocess_corpus.Rmd".
+
+```{r, load_libs, message=FALSE, warning=FALSE}
+library(dplyr)      # for wrangling
+library(magrittr)   # for piping
+library(quanteda)   # for tokenization, ngram creation.
+library(tidytext)   # for alternative tokenization, ngram creation.
+library(stringr)    # for word to corpus str_c() function
+library(qdap)       # for freq_terms() function
+
+# remove any previous variables (clean start)
+rm(list = ls())
+gc()
+```
+
+```{r, utility_functions}
+# Get object size in MB
+get_MB <- function(obj) {
+  format(object.size(obj),units="Mb")
+}
+
+# Used for splitting ngrams
+get_first_n_words <- function(s,n) {
+  str_to_lower(word(s, 1, n))
+}
+
+get_last_n_words <- function(s,n) {
+  str_to_lower(word(s, -n, -1))
+}
+```
+
+```{r, load_corpus}
+# load "corpus" variable
+load("../Data/train_corpus.rdat")
+```
+
+My model will not use information from any previous sentences to predict the start of the next. Instead we'll just offer the most frequenct sentence starts from our corpora:
+```{r, common_line_starts}
+(most_common_start <- str_match(corpus$text, "^[a-z'-]+") %>%
+  freq_terms %>% 
+  filter(WORD != "na") %>%
+  head(10))
+write.csv(x=most_common_start, "../Data/top_ten_start_Words.txt")
+```
+
+Here we'll use the tidytext package to "word" tokenize the corpus, and create ngram tables.
+
+The training set is large, but inevitably, any test set or real input entered by a user will contain words we've never seen before in our model training. We refer to these as out-of-vocabulary ("OOV") words. Our training set will also contain very low frequency ocurrences of obscure words that the user input or a test set is unlikely to ever contain.
+
+We'll handle both these case by replacing unseen (OOV) or low-frequency words in our training set with a token "unkwn", indicating that we are handling an "unknown" word. We need to count the occurences of these to get a feel for the proportion (i.e. probability!) of OOV words compared to in-vocabulary words. 
+
+To this end, we create a unigram table, containing the frequency of all word in the training corpus. We then prune this from about 50,000+ words down to a reasonable 24,000 words by only including words that occur with a frequency of 10 or more in our training corpus. This will also reduce the storage requirement of our ngram tables.
+
+NOTE: These ngram creation chunks run SLOWLY, go and make a nice cup of coffee (or two)...
+```{r, create_unigram_vocab}
+unigrams <- corpus %>%
+  unnest_tokens(text, text, token="ngrams", n=1) %>%
+  count(text, sort = TRUE)
+
+# create "in vocab" list
+vocab <- unigrams %>% filter(n >= 10)
+
+# how many words in the unigram list are now OOV, i.e. freq n <- 10?
+oov_count <- unigrams %>% filter(n < 10) %>% summarise(total = sum(n))
+
+# add "unkwn" to vocab with count to represent all words of low freq as OOV
+vocab %<>% add_row(text="unkwn", n=oov_count$total)
+vocab %<>% arrange(desc(n))
+
+# modify the corpus with low-frequency OOV words replaced by the "unkwn" token
+words <- corpus %>% unnest_tokens(text, text)
+words %<>% mutate(text=ifelse(text %in% vocab$text, text, "unkwn"))
+
+# rebuild corpus from words
+corpus <- words %>% 
+    group_by(line_no) %>% 
+    summarize(text = str_c(text, collapse = " ")) %>%
+    ungroup()
+
+# vocab replaces unigrams as it now contains an entry for "unkwn"
+unigrams <- vocab
+head(unigrams,20)   # "unkwn" is 15th most frequenct vocab "item"
+
+# rename "text" column to "ng_next" to match higher order ngrams (below)
+names(unigrams)[names(unigrams) == 'text'] <- 'ng_next'
+# add "ng_head" column to match higher order ngrams 
+
+unigrams <- cbind(unigrams,ng_head=NA)
+# reorder columns to match higher order ng_grams
+unigrams %<>% select(n,ng_head,ng_next)
+
+# tidy memory
+rm(vocab, words)
+gc()
+
+```
+
+Now we have our in-vocabulary list of unigrams, ordered by most frequent first, and our corpus, with low-frequency words considered to be "out-of-vocabulary" and replaced by our "unkwn" token.
+
+We can now create the bigram and trigram tables (again, best to go watch TV or have a coffee, it's slow, at least on my old 3rd gen iCore5 PC...)
+```{r, create_higher_order_ngrams}
+bigrams <- corpus %>% 
+  unnest_tokens(text, text, token="ngrams", n=2) %>%
+  count(text, sort = TRUE)
+
+trigrams <- corpus %>% 
+  unnest_tokens(text, text, token="ngrams", n=3) %>%
+  count(text, sort = TRUE)
+
+quadgrams <- corpus %>% 
+  unnest_tokens(text, text, token="ngrams", n=4) %>%
+  count(text, sort = TRUE)
+
+# **************** WARNING!!! *************************
+# reduce size if you only have 12GB RAM or less like me
+# otherwise we run out of memory in later steps... 
+#quadgrams  %<>%  filter(n > 1)
+#trigrams  %<>%  filter(n > 1)
+#bigrams  %<>%  filter(n > 1)
+
+# comment out the above two lines if you have plenty RAM. 
+# this "light pruning" causes a small distortion
+# of the probabilities...
+# *****************************************************
+
+
+# remove text=NA rows
+bigrams %<>% filter(!is.na(text))
+trigrams %<>% filter(!is.na(text))
+quadgrams %<>% filter(!is.na(text))
+
+get_MB(bigrams); get_MB(trigrams); get_MB(quadgrams) 
+```
+
+These bigram and trigrams are large as they contain very low-frequency (i.e. probability) examples that we'll likely never use to predict with, so we will do some pruning to reduce the memory requirement right down to mobile-phone-friendly levels, typically only a few MB.
+
+But first we'll also add a column for the probability of each ngram, in the form of the negative of the natural log, giving us a positive real number we 0 translates to probability of one, and higher numbers represent a logarithmically reducing probability. We'll scale and quantize this to a *positive integer less than about 65,000*  to reduce the ngram object sizes.
+
+```{r, manipulate_and_prune_ngrams}
+# split ngrams into "ng_head" and "ng_next" parts
+# e.g. a trigrams of words (w1,w2,w3) we split ng_head=(w1,w2), ng_next=(w3)
+bigrams %<>% 
+  mutate(ng_head=get_first_n_words(text,1),
+         ng_next=get_last_n_words(text,1))
+
+trigrams %<>% 
+  mutate(ng_head=get_first_n_words(text,2),
+         ng_next=get_last_n_words(text,1))
+
+quadgrams %<>% 
+  mutate(ng_head=get_first_n_words(text,3),
+         ng_next=get_last_n_words(text,1))
+
+# drop full ngram text column to save memory
+bigrams %<>% select(-text)
+trigrams %<>% select(-text)
+quadgrams %<>% select(-text)
+
+# remove rows which have "unkwn" in the predicted word column (ng_next)
+# as we never want to offer "unkwn" as a prediction!
+bigrams %<>% filter(ng_next != "unkwn")
+trigrams %<>% filter(ng_next != "unkwn")
+quadgrams %<>% filter(ng_next != "unkwn")
+get_MB(bigrams); get_MB(trigrams); get_MB(quadgrams)
+
+# add integer, scaled -log(probabiliity) column to ngrams (more positive -> less likely)
+unigrams %<>% mutate(prob = -floor(4000*log(n/sum(n))))
+bigrams %<>% group_by(ng_head) %>% mutate(prob = -floor(4000*log(n/sum(n))))
+trigrams %<>% group_by(ng_head) %>% mutate(prob = -floor(4000*log(n/sum(n))))
+quadgrams %<>% group_by(ng_head) %>% mutate(prob = -floor(4000*log(n/sum(n))))
+
+# arrange tables by increasing prob value (most probable at top of table)
+bigrams %<>% arrange(prob)
+trigrams %<>% arrange(prob)
+quadgrams %<>% arrange(prob)
+get_MB(bigrams); get_MB(trigrams); get_MB(quadgrams)
+
+# remove rows after top 6 most frequent ng_next per ng_head ocurrences,
+# since we'll never offer these to the user. BIG memory saving...
+bigrams %<>% group_by(ng_head) %>% slice(1:6)
+trigrams %<>% group_by(ng_head) %>% slice(1:6)
+quadgrams %<>% group_by(ng_head) %>% slice(1:6)
+get_MB(bigrams); get_MB(trigrams); get_MB(quadgrams)
+
+# remove low frequency ngrams (EVEN BIGGER memory saving!)
+# NOTE: tune these carefully to suit memory requirements target, i.e. a few MB each
+bigrams   %<>%  filter(n > 2)
+trigrams  %<>%  filter(n > 7)
+quadgrams  %<>%  filter(n > 4)
+get_MB(bigrams); get_MB(trigrams); get_MB(quadgrams)
+
+# reorder unigrams columns to match higher order ngrams
+unigrams %<>% select(n, ng_next, prob)
+
+# convert probs to integer explicitly (otherwise it'll be in double float format)
+unigrams$prob <- as.integer(unigrams$prob)
+bigrams$prob <- as.integer(bigrams$prob)
+trigrams$prob <- as.integer(trigrams$prob)
+quadgrams$prob <- as.integer(quadgrams$prob)
+
+get_MB(bigrams); get_MB(trigrams); get_MB(quadgrams)
+
+# add empty ng_head column to unigrams tro match higher ngrams
+unigrams %<>% mutate(ng_head=NA)
+unigrams %<>% select(n,ng_head,ng_next,prob)
+
+#save ngrams
+save(unigrams,bigrams,trigrams,quadgrams, file = "../Data/ngrams_25.rdat")
+```
+
+Now we have our ngrams up to quadgrams saved in an ".rdat" file of only 2.9MB disk spacem whilst taking about 21MB when in RAM!!
+
+The next steps are to prototype a basic model of ngram back off down to the unigram level. We'll not use any smoothing/discounting just yet, just to keep things simple at first, in the next file, "prototype_simple_models.Rmd"

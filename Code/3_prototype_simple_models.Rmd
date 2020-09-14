@@ -1,0 +1,274 @@
+---
+title: 'N-Gram Text Prediction Model '
+author: "Oli Bailey"
+date: "September, Year Of The Virus"
+output:
+  html_document:
+    theme: sandstone
+  pdf_document: default
+subtitle: 'Step 3. Prototype Simple Models'
+---
+
+## NOTES:
+
+This script concerns itself with the development and testing of the first simple models for our ngram prediction app, using the ngram table data created in the previous step in the file "create_ngram_tables.Rmd".
+
+The first model we'll try is a simple back-off that runs like this:
+
+**1. Is this a sentence start? 
+  If yes, offer top three most common sentence start words. STOP
+  If no, goto 2.
+2. If one (final) word is available:
+      find the top 3 most common bigrams as the predicitions.
+      find the top 3 most common unigrams 
+      combine in porder of probability (most frequenct first) STOP.
+3. Else if two (final) words are available:
+      find top 3 most common trigrams as the predicitions.
+      find the top 3 most common bigrams as the predicitions.
+      find the top 3 most common unigrams 
+      combine in order of probability (most frequenct first) STOP.
+4. Remove duplicates with the same prediction word
+5. Return the top 3 most probable remaining words.**
+
+
+Simples!
+
+```{r, load_libs, message=FALSE, warning=FALSE}
+library(dplyr)      # for wrangling
+library(magrittr)   # for piping
+library(stringr)    # for word to corpus str_c() function
+library(tidytext)   # for unnest_tokens()
+
+# remove any previous variables (clean start)
+rm(list = ls())
+```
+
+```{r, utility_functions}
+# Get object size in MB
+get_MB <- function(obj) {
+  format(object.size(obj),units="Mb")
+}
+
+# input is a sring, output is vector of first n words
+get_first_n_words <- function(s,n) {
+  str_to_lower(word(s, 1, n))
+}
+
+# input is a string, output is vector of last n words
+get_last_n_words <- function(s,n) {
+  str_to_lower(word(s, -n, -1))
+}
+
+# convert words not in our unigram vocab to "unkwn" token
+convert_oov <- function(words_to_check) {
+  ifelse(words_to_check %in% unigrams$ng_next, words_to_check,"unkwn")
+}
+  
+# function to clean a string, removing punctuation, replacing out-of-vocab words
+clean_string <- function(s) {
+  if (s == "") return (NULL)
+  # convert to single row data frame
+  s <- data.frame(text=s)
+  # use tidytext unnest_tokens to clean and split to words
+  s <- unnest_tokens(s, text, text) 
+  # replace OOV words with "unkwn"
+  s <- convert_oov(s$text)
+  
+  return(s)
+}
+```
+
+```{r, load_ngram tables, warning=FALSE}
+# load "corpus" variable
+load("../Data/ngrams_25.rdat")
+get_MB(unigrams); get_MB(bigrams); get_MB(trigrams); get_MB(quadgrams)
+
+# ungroup the tables
+unigrams <- ungroup(unigrams); bigrams <- ungroup(bigrams); trigrams <- ungroup(trigrams)
+unigrams_head <- head(unigrams, 3)
+
+# load most common sentence starts
+sentence_start_words <- read.csv("../Data/top_ten_start_Words.txt")
+top_start_words <- sentence_start_words$WORD[1:3]
+```
+
+Here is our first model, accepting a string containing unprocessed text of zero of more characters
+
+```{r, my_first_model}
+my_first_model <- function(s, as_table=FALSE, num_preds=3) {
+  s <- clean_string(s)
+  num_words <- length(s)
+  
+  # is this a sentence start?
+  if (num_words == 0) {
+    return (top_start_words)
+  }
+  
+  # if one word get top matching bigrams and unigrams
+  if (num_words == 1) {
+    # 0-6 top matching bigrams
+    bi <- bigrams %>%  filter(ng_head==s) 
+    # top6 matching unigrams
+    uni <- unigrams_head
+    # combine
+    pred <- rbind(bi, uni)
+  } else {
+    # num_words must be 2 or more at this point, so find matching tri/bi/unigrams
+    last_two_words <- paste(s[length(s)-1:0], collapse = " ")
+    last_word <- get_last_n_words(last_two_words,1)
+    
+    # 0-6 top matching trigrams
+    tri <- trigrams %>% filter(ng_head==last_two_words)
+    # 0-6 top matching bigrams
+    bi <- bigrams %>% filter(ng_head==last_word) 
+    # top6 matching unigrams
+    uni <- unigrams_head 
+    # combine
+    pred <- rbind(tri,bi,uni)
+  }
+  
+  # pick most common duplicate, sort most probable first
+  pred %<>% group_by(ng_next) %>% arrange(prob) %>% slice(1:1) %>% arrange(prob)
+  
+  if (as_table == FALSE) {return(head(pred$ng_next,num_preds))}
+  return(head(pred,num_preds))
+}
+```
+
+```{r, benchmark_my_first_model}
+# not using quadgrams here, so remove
+rm(quadgrams)
+
+# load benchamrking script
+source("Benchmarker/benchmark.R")
+
+# assign my model to the benchmark funciton
+predict.baseline <- my_first_model
+
+# run the benchmark
+benchmark(predict.baseline, 
+          # additional parameters to be passed to the prediction function can be inserted here
+          sent.list = list('tweets' = tweets, 
+                           'blogs' = blogs), 
+          ext.output = T)
+```
+
+
+-----------
+
+
+<q>
+Overall top-3 score:     16.13 %
+Overall top-1 precision: 11.58 %
+Overall top-3 precision: 19.94 %
+Average runtime:         16.89 msec
+Number of predictions:   28464
+Total memory used:       9.51 MB
+</q>
+
+Here we see that performance is not great, but not so bad for a first go with the simplest possible back-off model with no discounting/smoothing! From the forums, a good results using this benchmarker from https://github.com/hfoffani/dsci-benchmark would be:
+
+* Overall top-3 score:     17-20%
+* Overall top-1 precision: 12-13%
+* Overall top-3 precision: >20%%
+
+Recall, precision is defined as TP / (TP + FP), and Accuracy as (TP + TN)/(TP + TN + FP + FN)
+
+We have a low top-1 precision, but a decent top-3 precision, possibly indicating that we are ordering the predictions incorrectly based on (faulty) probability scores, or scores that aren't on an equal scale between the different n-gram sizes.
+
+Note the timing of 16msec average runtime, achieved using "tidyverse" tibbles, rather than super fancy data tables.
+
+I think with a 17ms response time, it is not worth investing effort into learning data table syntax to gain a few more milliseconds...
+
+Memory usage is also very low, as it should be when our target application is a mobile phone where the text prediction part of an app should be using a tiny amount of memory anyway, as it is a very small cog in the mig machine of a typical mobile phone!
+
+Next we'll try a quadgram model and see if this helps improve the top-1 precision...
+
+```{r, my_second_model, warning=FALSE}
+my_second_model <- function(s, as_table=FALSE, num_preds=3) {
+  s <- clean_string(s)
+  num_words <- length(s)
+  
+  # is this a sentence start?
+  if (num_words == 0) {
+    return (top_start_words)
+  }
+  
+  # if one word get top matching bigrams and unigrams
+  if (num_words == 1) {
+    # 0-6 top matching bigrams
+    bi <- bigrams %>%  filter(ng_head==s) 
+    # top6 matching unigrams
+    uni <- unigrams_head
+    # combine
+    pred <- rbind(bi, uni)
+  } else if (num_words == 2) {
+    last_two_words <- paste(s[length(s)-1:0], collapse = " ")
+    last_word <- get_last_n_words(last_two_words,1)
+    # 0-6 top matching trigrams
+    tri <- trigrams %>%  filter(ng_head==last_two_words) 
+    # 0-6 top matching bigrams
+    bi <- bigrams %>%  filter(ng_head==last_word) 
+    # top6 matching unigrams
+    uni <- unigrams_head
+    # combine
+    pred <- rbind(tri,bi, uni)
+  } else {
+    # num_words must be 3 or more at this point, so find matching quad/tri/bi/unigrams
+    last_three_words <- paste(s[length(s)-2:0], collapse = " ")
+    last_two_words <- paste(s[length(s)-1:0], collapse = " ")
+    last_word <- get_last_n_words(last_two_words,1)
+    
+    # 0-6 top matching quadgrams
+    quad <- quadgrams %>% filter(ng_head==last_three_words)
+    # 0-6 top matching trigrams
+    tri <- trigrams %>% filter(ng_head==last_two_words)
+    # 0-6 top matching bigrams
+    bi <- bigrams %>% filter(ng_head==last_word) 
+    # top6 matching unigrams
+    uni <- unigrams_head 
+    # combine
+    pred <- rbind(quad,tri,bi,uni)
+  }
+  
+  # pick most common duplicate, sort most probable first
+  pred %<>% group_by(ng_next) %>% arrange(prob) %>% slice(1:1) %>% arrange(prob)
+  
+  if (as_table == FALSE)  return(head(pred$ng_next,num_preds))
+  return(head(pred,num_preds))
+}
+```
+
+
+```{r}
+load("../Data/ngrams_25.rdat")
+
+source("Benchmarker/benchmark.R")
+
+predict.baseline <- my_second_model
+
+benchmark(predict.baseline, 
+          # additional parameters to be passed to the prediction function can be inserted here
+          sent.list = list('tweets' = tweets, 
+                           'blogs' = blogs), 
+          ext.output = T)
+```
+------------------
+
+Overall top-3 score:     16.51 %
+Overall top-1 precision: 11.98 %
+Overall top-3 precision: 20.33 %
+Average runtime:         124.16 msec
+Number of predictions:   28464
+Total memory used:       18.18 MB
+
+
+We see tiny gains (sub 0.5%) in precision moving to a quadgram model, but a significant slow down from about 20ms to 124ms! 
+
+So we are  better off sticking to a trigram model, but how do we get that Top-1 Precision up from 12% to something like 13-15%? Is this where some discounting/smoothing might help...
+
+In the next file (more_complex_models.Rmd), we consider more complex models that attempt to increase the Top-1 Precision.
+
+
+
+

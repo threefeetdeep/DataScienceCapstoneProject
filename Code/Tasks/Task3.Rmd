@@ -1,0 +1,426 @@
+---
+title: 'N-Gram Text Prediction Model '
+author: "Oli Bailey"
+date: "28th August, 2020"
+output:
+  html_document:
+    theme: sandstone
+
+  pdf_document: default
+subtitle: 'Task 3: Modelling'
+---
+
+# Task 3 - Modeling
+The goal here is to build your first simple model for the relationship between words. This is the first step in building a predictive text mining application. You will explore simple models and discover more complicated modeling techniques.
+
+## Tasks to accomplish
+
+Build basic n-gram model - using the exploratory analysis you performed, build a basic n-gram model for predicting the next word based on the previous 1, 2, or 3 words.
+
+Build a model to handle unseen n-grams - in some cases people will want to type a combination of words that does not appear in the corpora. Build a model to handle cases where a particular n-gram isn't observed.
+
+
+### Questions to consider
+
+* How can you efficiently store an n-gram model (think Markov Chains)?
+* How can you use the knowledge about word frequencies to make your model smaller and more efficient?
+* How many parameters do you need (i.e. how big is n in your n-gram model)?
+* Can you think of simple ways to "smooth" the probabilities (think about giving all n-grams a non-zero probability even if they aren't observed in the data) ?
+* How do you evaluate whether your model is any good?
+* How can you use backoff models to estimate the probability of unobserved n-grams?
+
+## Hints, tips, and tricks
+
+As you develop your prediction model, two key aspects that you will have to keep in mind are the size and runtime of the algorithm. These are defined as:
+
+* Size: the amount of memory (physical RAM) required to run the model in R
+* Runtime: The amount of time the algorithm takes to make a prediction given the acceptable input
+
+Your goal for this prediction model is to minimize both the size and runtime of the model in order to provide a reasonable experience to the user.
+
+Keep in mind that currently available predictive text models can run on mobile phones, which typically have limited memory and processing power compared to desktop computers. Therefore, you should consider very carefully (1) how much memory is being used by the objects in your workspace; and (2) how much time it is taking to run your model. Ultimately, your model will need to run in a Shiny app that runs on the shinyapps.io server.
+
+## More Tips, tricks, and hints
+
+Here are a few tools that may be of use to you as you work on their algorithm:
+
+* object.size(): this function reports the number of bytes that an R object occupies in memory
+* Rprof(): this function runs the profiler in R that can be used to determine where bottlenecks in your function may exist. The profr package (available on CRAN) provides some additional tools for visualizing and summarizing profiling data.
+* gc(): this function runs the garbage collector to retrieve unused RAM for R. In the process it tells you how much memory is currently being used by R.
+
+There will likely be a trade-off that you have to make in between size and runtime. For example, an algorithm that requires a lot of memory, may run faster, while a slower algorithm may require less memory. You will have to find the right balance between the two in order to provide a good experience to the user.
+
+<br>
+
+```{r, knitr_setup, cache=FALSE, include=FALSE}
+library(knitr)
+rm(list=ls())
+opts_knit$set(root.dir='C:\\Users\\oli.bailey\\Documents\\MyStuff\\Stats\\Coursera\\DSS\\10. Datascience Capstone\\PredictionModel')
+knitr::opts_chunk$set(fig.width=6, fig.height=6, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
+
+options(width = 160)
+options(xtable.comment = FALSE)
+options(knitr.table.format = "pipe")
+
+outputType <- "html"
+gc()
+# Clear knitr cache when regenerating afresh 
+```
+
+This time, we'll convert to data tables to gain some speed when searching the ngram tables, so we load the data.table package as well here:
+```{r, load_libs, message=FALSE, warning=FALSE}
+library(tidyverse)  # for reading, wrangling, visualizing, string manipulation
+library(qdap)       # for unigram dictionary check (to remove Twitter slang etc.)
+library(tidytext)   # for ngrams
+library(stringi)    # for sentence extraction
+library(magrittr)   # for concise code with pipes
+library(data.table) # for faster search on ngram tables
+```
+
+These are  utility functions used by the rest of the script below:
+```{r, utility}
+# file handling
+load_file <- function(file_name) {
+  fp <- file(file_name)
+  f <- readLines(fp)
+  #f <- iconv(f, "latin1", "ASCII", sub="")
+  f <- iconv(f, "UTF-8", "ASCII")
+  close(fp)
+  return(f)
+}
+
+# Check a single word
+is.word  <- function(x) x %in% c(GradyAugmented)
+
+# convert words not in our vocab to "unkwn" token
+convert_oov <- function(words_to_check) {
+  ifelse(words_to_check %in% vocab$text, words_to_check,"unkwn")
+}
+
+
+# Get the size of an object in MB
+get_MB <- function(obj) {
+  format(object.size(obj),units="Mb")
+}
+```
+
+```{r, load_files, warning=FALSE, message=FALSE}
+# Assumes input files are in folder ./en_US
+  blogs <- load_file("en_US/en_US.blogs.txt")
+  news <- load_file("en_US/en_US.news.txt")
+  twitter <- load_file("en_US/en_US.twitter.txt")
+```
+
+We'll base our modelling this time training data that uses most of the data in the input files, but use some heavy pruning to keep only the higher frequency ngrams. Smaller fractions of the input data will be used for testing, and as a development set ("dev-set") used to tune the Add-K smoothing parameter.
+```{r, sample_mixture}
+desired_percentage <- 100  # of total object sizes in sample
+
+set.seed(1977)
+reduction_factor <-  desired_percentage / 100
+blogs <- sample(blogs,ceiling(length(blogs) * reduction_factor))
+
+set.seed(1982)
+reduction_factor <-  desired_percentage / 100
+news <- sample(news,ceiling(length(news) * reduction_factor))
+
+set.seed(2020)
+reduction_factor <-  desired_percentage / 100
+twitter <- sample(twitter,ceiling(length(twitter) *reduction_factor))
+```
+
+
+Now we have loaded all the data, we need to clean it by removing swear words and punctuation, and converting  to lower case. We'll also split the data into one sentence per line.
+```{r, clean_to_sentences}
+# create combined sample corpus arranged by single sentences (rather than lines of one or more sentences)
+corpus <- c(blogs,news,twitter)
+rm (blogs, news, twitter)
+corpus <- unlist(stri_split_boundaries(corpus, type="sentence"))
+corpus <- tibble(text = corpus)
+
+# all words to lower case, remove foul words and punctuation (EXCEPT ' and - e.g. "i'm double-barelled")
+con = file("http://www.bannedwordlist.com/lists/swearWords.txt")
+banned_words = c("motherfucker", readLines(con))
+close(con)
+
+corpus %>%
+    mutate(text = tolower(text)) %>%
+    mutate(text = str_remove_all(text, '[0-9\\.,><?!"£\\@$%\\^&\\*_;:\\(\\)]')) %>% 
+    mutate(text = str_remove_all(text, paste(banned_words, collapse = "|"))) -> corpus
+
+# remove NA lines
+corpus <- corpus[!is.na(corpus)]
+
+# add line number into corpus
+corpus <- tibble(line_no=1:length(corpus), text = corpus)
+```
+
+Now split into train, test and devset portions
+```{r, split_train_test_devset}
+
+
+# remove a chunk of our corpus to use for testing (say 10% of it)
+set.seed(2021)
+inTest <- sample(1:nrow(corpus), floor(nrow(corpus)*0.1))
+test_corpus <- corpus[inTest,]
+corpus <- corpus[-inTest,]
+
+# remove another small chunk (5%) of the corpus as our "held-out"
+# corpus for tuning lambda interpolation hyperparameter
+inHeldOut <-sample(1:nrow(corpus), floor(nrow(corpus)*0.05))
+held_out_corpus <- corpus[inHeldOut,]
+corpus <- corpus[-inHeldOut,]
+
+
+# save main (training) and test corpora
+save(corpus, file="en_US/train_corpus.rdat")
+save(test_corpus, file="en_US/test_corpus.rdat")
+save(held_out_corpus, file="en_US/held_out_corpus.rdat")
+
+rm(desired_percentage, reduction_factor, banned_words, inTest, inHeldOut)
+```
+
+
+In this section, we create a vocabulary of teh most common words that occurs with a frequency of 500 times or more in our training set. Any words not in this vocabulary will be considered to be "out-of-vocabulary" with a probabililty set by the number of occurences of words from the training set that aren't in our vocab. Out-of-vocabulary words are replaced with a token "unkwn" in our ngrams and vocab variables.
+
+If the user enters a word not in our vocab, we will assume it is an out-of-vocab word that **would** have been somewhere in our training set, i.e. we can use the probability of "unkwn" out-of-vocab words.
+```{r, create_vocab_and_replace_unknown_words, warning=FALSE, message=FALSE}
+# load and put into tidy tibble
+#load("en_US/train_corpus.rdat")
+
+
+# split to 44 million "words" 
+# NOTE: this would convert to lower case and removes punctuation if we hadn't done so already!
+words <- corpus %>% unnest_tokens(text, text)
+
+# remove misspelled words (words not in our chosen English dictionary)
+# Thi reduces to about 42 million words in 5.2 million sentences.
+words <- words[is.word(words$text),]
+
+# count word frequencies, creating a "frequency dictionary" of unigrams
+library(magrittr)
+words %>%  count(text, sort = TRUE) -> unigrams
+
+# There are now about 65500 unique words. We don't need this many, 
+# so we'll prune out lower frequency words, and eventaully replace them
+# with our token "unkwn".
+
+# create list of "out-of_vocabulary" low frequency words
+# We'll cover 93% of the words used, in about 5,600 high-frequency words.
+min_n <- 500
+out_of_vocab <- unigrams %>% filter(n < min_n)
+N_out <- sum(out_of_vocab$n)
+
+# create "in vocab" list
+vocab <- unigrams %>% filter(n >= min_n)
+
+# Add "unkwn" to vocab with count
+vocab %<>% add_row(text="unkwn", n=N_out)
+vocab %<>% arrange(desc(n))
+
+save(vocab, file="en_US/vocab.rdat")
+  
+# rebuild corpus but with poor spelling removed 
+# and low freq words replaced with unknown token
+words %<>% mutate(text=ifelse(text %in% out_of_vocab$text, "unkwn", text))
+corpus <- words %>% 
+    group_by(line_no) %>% 
+    summarize(text = str_c(text, collapse = " ")) %>%
+    ungroup()
+
+# We only really need top of "vocab" variable with most common unigrams for 
+# the model when it "runs out of ideas" with longer n-grams
+save(corpus, file="en_US/train_corpus.rdat")
+rm(words, out_of_vocab, unigrams)
+```
+
+
+```{r, common_line_starts}
+# My model will not use information from preceding sentences to predict the start
+# of a new one. Instead, we'll just use the most common sentence starts from the data.
+(most_common_start <- str_match(corpus$text, "^[a-z'-]+") %>%
+  freq_terms %>% 
+  filter(WORD != "na") %>%
+  head(100))
+write_csv(x=most_common_start, "en_US/sentence_start_words.txt")
+
+# (Note, we'll capitalize these predictions in our app when we detect a new sentence.)
+```
+
+
+```{r, create_seperate_ngrams,warning=FALSE,message=FALSE}
+# Now create the higher n-grams, using the tidytext tokenizer
+
+# WARNING: Go make a cup of tea or two... VERY SLOW.
+
+# NOTE: We we can't filter out low frequency ngrams till after 
+# this time consuming step of ngram creation!
+bigrams <- corpus %>% 
+  unnest_tokens(text, text, token="ngrams", n=2) %>%
+  count(text, sort = TRUE)
+
+trigrams <- corpus %>% 
+  unnest_tokens(text, text, token="ngrams", n=3) %>%
+  count(text, sort = TRUE)
+```
+
+Filter out NA entries
+```{r, remove_NA_ngrams}
+# save memory
+rm(corpus); gc()
+
+# remove text=NA rows
+bigrams %<>% filter(!is.na(text))
+trigrams %<>% filter(!is.na(text))
+
+get_MB(bigrams); get_MB(trigrams);
+```
+
+The trigrams object is nearly a Gigabyte! We want to do some serious pruning now,  to get bigram and trigram files down to few MB each
+```{r, prune_ngrams}
+# remove low frequency ngrams 
+bigrams   %<>%  filter(n > 30)
+get_MB(bigrams)
+trigrams  %<>%  filter(n > 25)
+get_MB(trigrams)
+```
+
+```{r}
+
+# split ngrams into "head"  and "pred" (for prediction) parts
+# e.g. a trigrams of words (w1,w2,w3) we split to head=(w1,w2), pred=(w3)
+bigrams %<>% 
+  mutate(head=get_first_n_words(text,1),
+         pred=get_last_n_words(text,1))
+
+trigrams %<>% 
+  mutate(head=get_first_n_words(text,2),
+         pred=get_last_n_words(text,1))
+
+
+# drop redundant column of full text, to save memory!
+bigrams %<>% select(-text)
+trigrams %<>% select(-text)
+get_MB(bigrams); get_MB(trigrams); 
+
+# remove rows which have "unkwn" in the predicted word column (pred)
+#bigrams %<>% filter(ng_next != "unkwn")
+#trigrams %<>% filter(ng_next != "unkwn")
+
+# add probability column to ngrams
+bigrams %<>% group_by(head) %>% mutate(prob=n/sum(n))
+trigrams %<>% group_by(head) %>% mutate(prob=n/sum(n))
+get_MB(bigrams); get_MB(trigrams); 
+
+# covert to data tables to speed things up
+# vocab <- setDT(vocab)
+# bigrams <- setDT(bigrams)
+# trigrams <- setDT(trigrams)
+
+# Arrange with most frequent ngrams first
+vocab %<>% arrange(desc(n))
+bigrams %<>% arrange(desc(n))
+trigrams %<>% arrange(desc(n))
+
+# set keys to allow faster search
+# setkey(vocab, text)
+# setkey(bigrams, head, pred)
+# setkey(trigrams, head, pred)
+
+#save ngrams for use in prediction task
+save(bigrams,trigrams,vocab, file = "en_US/ngrams.rdat")
+
+# load ngrams if needed
+#load("en_US/ngrams.rdat")
+```
+Now we have a bigrams object of 5MB and a trigrams object of 10MB with which we can start to make predictions...
+<br>
+
+# Add-K smoothing
+We must handle bigrams or trigrams that have zero probability (i.e. not in our tables) by "smoothing", that is shaving off some probability from those in our tables, to assign to zero-probability ngrams not in our tables! We'll do this by creating a smoothing function using the "Add-k" algorithm that is demonstrated below.
+
+We'll use the example of a bigram "those through", which does not appear in our bigram table. Note that the reverse bigram "through those" does appear, with a frequency of 69 times, and probability P(those|through)=0.00327. An example phrase using this bigram would be "we got them **through those** Chinese websites..."
+
+Without smoothing we have that P(through|those)=0.00000, i.e. we will never predict this bigram. An example phrase using this bigram that doesn't occur in our tables is "we bought **those through** our friends..." . With smoothing we can generate a probability for this unseen bigram as shown below:
+
+```{r, add_k_smoothing}
+add_k_smoothing <- function(b,k,V=nrow(vocab)) {
+  # V is the vocab count of words in our vocabulary
+  # k is the smoothing "fraction" to use 0 < k < 1
+  # b is the input bigram row
+  # p_addk(wn | wn-1) = (C(wn-1,wn) + k)/(sum(C(wn-1,w))+ kV)
+  sum_n <- sum(bigrams$n[bigrams$head==b$head])
+  if (dim(b)[1]==0) {
+    p_addk <- k/(sum_n + k*V)
+  } else {
+    p_addk <- (b$n + k)/(sum_n + k*V)
+  }
+  
+  return(p_addk)
+}
+
+# The bigram in our tables has P=0.00327. Add-k smoothing will reduce this.
+add_k_smoothing(bigrams %>% filter(head=="through", pred=="those"),k=0.01)
+
+# ...and now using a 'zero frequency' bigram "those through", a non-zero P is given:
+add_k_smoothing(bigrams %>% filter(head=="those", pred=="through"),k=0.01)
+
+# And for phrases with "unkwn" tokens
+add_k_smoothing(bigrams %>% filter(head=="a", pred=="unkwn"),k=0.01)
+add_k_smoothing(bigrams %>% filter(head=="unkwn", pred=="a"),k=0.01)
+add_k_smoothing(bigrams %>% filter(head=="unkwn", pred=="unkwn"),k=0.01)
+
+```
+
+So we see that the unseen bigram has been given a probability of 0.00018, whereas the bigram that does occur in our tables has been reduced from 0.00327 to 0.00323, using k=0.05 in this example.
+
+We will need to try to find an optimum value for k, which we'll do using trial and error on our held-out corpus of as-yet unseen sentences. This is done below, by finding a value for k which gives the maximum average sentence probability over the held-out corpus.
+
+```{r, find_optimum_k}
+# probability record for all sentences analysed
+
+
+for (k_ in c(0.001,0.01,0.1,1)) {
+  p_all <- numeric()
+  set.seed(11111)
+  for ( sentence_ in sample(held_out_corpus$text,1000) )  {
+    # split current sentence to words
+    tokens <- word_split(sentence_)[[1]]
+    
+    N <- length(tokens)  # N = number of words in sentence
+    
+    # only test sentences of a set length
+    if (N != 8) next
+    
+    # replace out-of-vocabulary words with "unkwn" token
+    tokens <- convert_oov(tokens)
+  
+    # initilize variables
+    
+    p <- 1  # **log** probability of sentence
+    
+    # Multiply bigram probabilities for current sentence
+    for (i in 1:(N-1)) {
+      p <- p + log(add_k_smoothing(bigrams %>% 
+                                     filter(head==tokens[i],pred==tokens[i+1]),
+                                   k = k_))
+    }
+    p_all <- c(p_all,p)
+  }
+  print(paste(k_,mean(p_all)))
+}
+
+```
+Unfortunately, within our chosen range of k from 0.001 to 1, the average "probabillity of all sentences" simply reduces as k increases. So we have no "optimal" value for k!
+
+Instead, we will simply opt for an arbitrary value of k=0.05.
+
+# Stupid Backoff
+For our initial model, we'll adopt a strategy of trying to match the highest order ngram in our tables to the user inputted words. If no match is found (i.e. one that predicts an actual word rather than the "unkwn" token), then we will reduce to the next lower n-gram size, and search again, until we reach the unigram, in which case we simply select from the most frequently occuring words, i.e. the top or head of our "vocab" variable.
+
+# Sentence Starts
+For the start of sentences i.e. before the user has typed anything, or after he has entered a full stop, we will offer the most frequent words used to begin sentences from our training data. In our initial model, we won't be very smart about detecting legitimate sentence end and starts. 
+
+For example, if the user type "I said hello to Mr. Brown.", our model will start a new sentence after "Mr." and "Brown." rather than the correct "Brown." only. Future revisions can address this shortcoming.
+
+

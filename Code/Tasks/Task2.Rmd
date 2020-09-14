@@ -1,0 +1,246 @@
+---
+title: 'N-Gram Text Prediction Model '
+author: "Oli Bailey"
+date: "21st August, 2020"
+output:
+  html_document:
+    theme: sandstone
+  pdf_document: default
+subtitle: 'Task 2 Exploratory Data Analysis'
+---
+
+```{r, load_libs, message=FALSE, warning=FALSE, echo=FALSE}
+library(tidyverse)  # for reading, wrangling, visualizing, string manipulation
+library(qdap)       # for unigram dictionary check (to remove Twitter slang etc.)
+library(tidytext)   # for ngrams
+library(stringi)    # for sentence extraction
+library(magrittr)   # for concise code with pipes
+```
+
+```{r, utility_functions}
+# ----------------------------------
+#   UTULITY FUNCTIONS
+# ----------------------------------
+
+
+# file handling
+load_file <- function(file_name) {
+  fp <- file(file_name)
+  f <- readLines(fp)
+  #f <- iconv(f, "latin1", "ASCII", sub="")
+  f <- iconv(f, "UTF-8", "ASCII")
+  close(fp)
+  return(f)
+}
+
+# Check a single word (using qdap package dictionary)
+is.word  <- function(x) x %in% c(GradyAugmented)
+
+# Get object size in MB
+get_MB <- function(obj) {
+  format(object.size(obj),units="Mb")
+}
+```
+
+# Task 2 - Exploratory Data Analysis
+The first step in building a predictive model for text is understanding the distribution and relationship between the words, tokens, and phrases in the text. The goal of this task is to understand the basic relationships you observe in the data and prepare to build your first linguistic models.
+
+## Tasks to accomplish
+
+Exploratory analysis - perform a thorough exploratory analysis of the data, understanding the distribution of words and relationship between the words in the corpora.
+
+Understand frequencies of words and word pairs - build figures and tables to understand variation in the frequencies of words and word pairs in the data.
+
+
+```{r, load_files, warning=FALSE, message=FALSE}
+# Assumes input files are in folder ./en_US
+  blogs <- load_file("en_US/en_US.blogs.txt")
+  news <- load_file("en_US/en_US.news.txt")
+  twitter <- load_file("en_US/en_US.twitter.txt")
+```
+
+We'll base our EDA on a 1% sample of the input files to keep processing times manageable
+```{r, sample_mixture}
+desired_percentage <- 1  # of total object sizes in sample
+
+set.seed(1977)
+reduction_factor <-  desired_percentage / 100
+blogs <- sample(blogs,ceiling(length(blogs) * reduction_factor))
+
+set.seed(1982)
+reduction_factor <-  desired_percentage / 100
+news <- sample(news,ceiling(length(news) * reduction_factor))
+
+set.seed(2020)
+reduction_factor <-  desired_percentage / 100
+twitter <- sample(twitter,ceiling(length(twitter) *reduction_factor))
+```
+
+```{r, combine_to_single_corpus}
+# create combined sample corpus arranged by single sentences (rather than lines of one or more sentences)
+corpus <- c(blogs,news,twitter)
+rm (blogs, news, twitter)
+corpus <- unlist(stri_split_boundaries(corpus, type="sentence"))
+
+# save corpus so we don't need to rerun the code above
+save(corpus, file="en_US/corpus.rdat")
+``` 
+We now have a combined 1% sample arranged by sentences as a character vector
+ 
+Before we look at n-gram frequencies, we'll clean up the text, removing swear words, mispelled words, puntuations, numbers, email adresses, URLs etc.
+
+```{r}
+load("en_US/corpus.rdat")
+# Convert corpus to a tibble
+corpus <- tibble(text = corpus)
+
+# All words to lower case, remove foul words and punctuation (EXCEPT ' and - e.g. "i'm double-barelled")
+banned_words = c("motherfucker", readLines(file("http://www.bannedwordlist.com/lists/swearWords.txt")))
+corpus %>%
+    mutate(text = tolower(text)) %>%
+    mutate(text = str_remove_all(text, '[0-9\\.,><?!"£\\$%\\^&\\*_;:\\(\\)]')) %>% 
+    mutate(text = str_remove_all(text, paste(banned_words, collapse = "|"))) -> corpus
+
+# remove NA lines
+corpus <- corpus[!is.na(corpus)]
+
+# Add line numbers for each sentence
+corpus <- tibble(line_no=1:length(corpus), text = corpus)
+
+# Save samples and processed corpus
+write_lines(corpus, "en_US/sample_corpus.txt")
+
+rm(desired_percentage, reduction_factor, banned_words)
+```
+
+```{r, tidy, warning=FALSE, message=FALSE}
+# load and put into tidy tibble
+#corpus <- readLines(file("en_US/sample_corpus.txt"))
+
+
+# split to words (this would convert to lower case and removes punctuation if we hadn't done so already!)
+words <- corpus %>% unnest_tokens(text, text)
+
+# remove misspelled words (using qdap dictionary)
+words <- words[is.word(words$text),]
+
+# count word frequencies, creating a "frequency dictionary" of unigrams
+words %>%
+  count(text, sort = TRUE) -> unigrams
+
+head(unigrams)
+nrow(unigrams)
+
+```
+
+So, in our 1% sample of the input files, we have 21391 unique words (after cleaning), with a total word count of 491,208. The most common words are the expected simple conjunctions and prepositions like "the","to", "and" etc.
+
+### What are the frequencies of 2-grams and 3-grams in the dataset?
+Here we might consider only ngrams with frequencies above a certain threshold, e.g. if they occur four times or more in our corpus, as this keeps the file size down to a couple MB.
+
+```{r, create_seperate_ngrams,warning=FALSE,message=FALSE}
+# Use tidytext package to create n-grams
+bigrams <- corpus %>% 
+  unnest_tokens(text, text, token="ngrams", n=2) %>%
+  count(text, sort = TRUE)
+
+trigrams <- corpus %>% 
+  unnest_tokens(text, text, token="ngrams", n=3) %>%
+  count(text, sort = TRUE)
+
+
+# save memory
+#rm(corpus); gc()
+
+# remove text=NA rows
+bigrams %<>% filter(!is.na(text))
+trigrams %<>% filter(!is.na(text))
+
+
+get_MB(bigrams); get_MB(trigrams);
+```
+From our 1% sample of the input files, we have bigram and trigram objects in the tens of MB since they include ngrams occuring once or more.
+
+We would like to reduce these ngram object perhaps to only a couple of MB by pruning down to say a couple of MB each. We can do this manually.
+
+```{r, prune_ngrams}
+# remove low frequency ngrams 
+# NOTE: tune these carefully to suit memory requirements target!
+bigrams   %<>%  filter(n > 2)
+get_MB(bigrams)
+trigrams  %<>%  filter(n > 2)
+get_MB(trigrams)
+```
+Just by removing ngrams that occur only once, we get files in our target zone of about 2MB!
+
+Let's plot the sorted (descending) bigram and trigram freuqency of occurences:
+```{r}
+plot(log(bigrams$n), type="l", col="blue")
+lines(log(trigrams$n), type="l", col="red")
+legend(10000, 6, legend=c("Bigrams", "Trigrams"),
+       col=c("red", "blue"), lty=1:2, cex=0.8)
+```
+We see that the number of bigrams oand trigrams rapidly fall to low frequencies, trigrams more so than bigrams, i.e. most of the "probability" of occurence is stacked up in only a small fraction of the most commonly occuring ngrams, meaning pruning will only have small impacts on accuracy. So we can improve speed and memory requirements with only small accuracy impacts.
+
+Let's have a lok at the most common ways for sentences to start, as we might want th is information to offer the user some starting words for each new sentence that they type. 
+Note that we'll capitalize these predictions in our app when we detect a new sentence.
+```{r, common_line_starts}
+# My model will not use information from preceding sentences to predict the start
+# of a new one. Instead, we'll just use the most common sentence starts from the data.
+(most_common_start <- str_match(corpus$text, "^[a-z'-]+") %>%
+  freq_terms %>% 
+  filter(WORD != "na") %>%
+  head(10))
+write_csv(x=most_common_start, "en_US/top_ten_start_Words.txt")
+```
+
+So we see that the majority of sentences in our sample corpus begin with "I","the" and "We", so we could offer these as "predictions" each time the user starts a new sentence.
+
+
+
+### How many unique words do you need in a frequency sorted dictionary to cover 50% of all word instances in the language? 90%?
+
+We have 21,391 unique words (after processing) in our 1% sample corpus, occuring a total of 491,208 times.
+
+```{r, unigram_coverage}
+T <- sum(unigrams$n)
+i <- 1
+
+while (sum(unigrams$n[1:i]) < 0.5*T) {
+  i <- i + 1
+}
+
+cat("For 50% coverage of word instances, we need the top",i,"most frequent words")
+
+while (sum(unigrams$n[1:i]) < 0.9*T) {
+  i <- i + 1
+}
+cat("\n\nFor 90% coverage of word instances, we need the top",i,"most frequent words")
+```
+So we see we can dramatically prune the unigram frequencies without losing too much coverage of our most frequent words.
+
+
+### How do you evaluate how many of the words come from foreign languages?
+Tricky! We have removed many words simply for poor spelling by using an English dictionary check above (using the qdap package), and some foreign words will be included in this cull, but it would be trickly to estimate to proportion.
+
+Foreign words will be legitimate words let through the regex, but will not appear in an english dictionary. By elimating them with an English dictionary check we will unfortunately not be able to predict common foreign language phrases like "c'est la vie", "deja vu" or "doppelganger". This is something we could address in future version of our app!
+
+
+###  Can you think of a way to increase the coverage -- identifying words that may not be in the corpora or using a smaller number of words in the dictionary to cover the same number of phrases?
+
+Our training corpora is finite and won't include some common words or phrases that we ideally would like to predict as the user might consider them quite common and useful. To increase this coverage in our app, we could access other online resources e.g Google N-grams, or other smaller sources of common every day phrases.
+
+We might also consider use of a stemmer to increase coverage by considering all possible endings for words, even if some didn't occur in our training corpora. For example, our copora may have contianed many occurences of the word "deliberations" but none of "deliberates", both of which share the stem "deliberat".
+
+We could encode common stems like "...ates", "...ions","...tion", "...tions" etc. in a look up table, and only store the stem plus a reference to the look-up table of stems for each word to save memory in our list of words. We won't implement any of these ideas from this section in our basic Shiny App though. These will have to wait for a future version...
+
+
+
+
+
+
+
+
+
+
+
