@@ -9,7 +9,6 @@ http://threefeetdeep.shinyapps.io/?
 
 
 Project top level folder structure and information about data files:
-
   *
   |
   * - Data - output data from the creation of ngram tables, to be used by the prediction app
