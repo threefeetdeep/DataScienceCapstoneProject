@@ -8,8 +8,8 @@ The main goal of the project is to design a Shiny application that takes as inpu
 http://threefeetdeep.shinyapps.io/?
 
 
-Project top level folder structure and information about data files:
-|
+Project top level folder structure and information about data files:<br>
+|<br>
 |  
 |--- Data - output data from the creation of ngram tables, to be used by the prediction app<br>
 |  
