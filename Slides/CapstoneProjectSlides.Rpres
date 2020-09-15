@@ -24,12 +24,16 @@ Data Science Specialization Capstone Project
 
 - Near-instantaneous prediction of next word
 - Candidate word list with optional likelihood values
-- Very small memory footprint: < 4MB on flash/disk, < 20MB in RAM
+- Very small memory footprint: 
+  <br> < 4MB on flash/disk 
+  <br> < 20MB in RAM
 - Written in "tidyverse" style - easy for developers to add new features
 
 ***
 
 ![two-col-image](CapstoneProjectSlides-figure/WordPred-3.PNG) 
+
+- <p><font size=5>Benchmark Performance (trigram mode):<br> Overall top-3 score: 16.36%<br>Overall top-1 precision: 11.72 %<br>Overall top-3 precision: 20.30 %<br>Avg. CPU: 16.36 msec; Memory: 9.60 MB</font/</p>
 
 
 Prediction Algorithm and Implementation
