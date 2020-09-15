@@ -1,0 +1,29 @@
+/* slide titles */
+.reveal h3 { 
+  font-size: 40px;
+  font-weight: bold;
+  color: #A93226;
+}
+
+.small-text{
+  font-size: 1em;
+}
+
+
+img[alt=two-col-image] { 
+  width: 1000px; 
+}
+
+body {
+    margin: 1px 1px 1px 1px;
+    background-color: #fef9e7;
+}
+
+.reveal body {
+   font-size: 60%;
+}
+
+
+
+
+
