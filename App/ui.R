@@ -1,5 +1,5 @@
 library(shiny)
-
+library(shinyWidgets)
 # Define UI for application that draws a histogram
 shinyUI(fluidPage(
   
@@ -8,7 +8,7 @@ shinyUI(fluidPage(
   # ),
   
   # Application title
-  titlePanel("Mobile Messenger App With Next Word Prediction"),
+  titlePanel("MyWord! N-Gram Text Prediction Demo App"),
   
   # Sidebar with a slider input for the number of bins
   sidebarLayout(
@@ -21,6 +21,8 @@ shinyUI(fluidPage(
                 value = "" # 
       ),
       
+      
+      switchInput("quad_power_mode","QuadPower(TM)", offStatus = "danger"),
       
       sliderInput("num_suggestions", "Number of suggestions:", 
                   min=1, max=6, value=3)

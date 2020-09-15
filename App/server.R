@@ -8,7 +8,8 @@ shinyServer(function(input, output) {
   # define reactive variable to hold user input
   user_data <- reactive({
     data.frame(num_suggestions = input$num_suggestions,
-               phrase = input$message)
+               phrase = input$message,
+               mode = input$quad_power_mode)
   })
   
   # define reactive variable to hold prediction

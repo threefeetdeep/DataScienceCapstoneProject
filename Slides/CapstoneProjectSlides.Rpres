@@ -14,7 +14,7 @@ Data Science Specialization Capstone Project
 
 [MyWord!](https://threefeetdeep.shinyapps.io/my_word) is a web app demo that accepts typed input and predicts the next word. The target for real-world application is smartphone messaging. This implies limited memory and processing power.
 
-- Easy of use: just start typing a sentence, the predicted next word is displayed when typing stops.
+- Ease of use: just start typing a sentence, the predicted next word is displayed when typing stops.
 - Good user experience: initialization typically within seconds, next word prediction in less than 0.1 sec.
 - Acceptable accuracy: approx. 11-12% (top suggested word, N=700 tests).
 - Optional "QuadPower" mode (using quadgrams) to boost accuracy at expense of slight response time increase
@@ -43,9 +43,9 @@ Prediction Algorithm and Implementation
 
 - The tables are generated based on the conditional probability as follows:
 
-$$Pr(w_{i}|w_{i-1}) = \frac {count(w_{i-1},w_{i})} {count(w_{i-1})}$$
-
-where $w_{i}$ is last word, $w_{i-1}$ is n-1 preceding words.
+<div class="smaller">$$Pr(w_{i}|w_{i-1}) = \frac {count(w_{i-1},w_{i})} {count(w_{i-1})}$$</div>
+<div class="smaller">$$\text{where } w_{i}, w_{i-1} \text{ are the last word, and n-1 preceding words.}$$</div>
+<br>
 
 - The most recently entered words are matched against model data. 
 

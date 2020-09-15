@@ -218,7 +218,7 @@ unigrams %<>% mutate(ng_head=NA)
 unigrams %<>% select(n,ng_head,ng_next,prob)
 
 #save ngrams
-save(unigrams,bigrams,trigrams,quadgrams, file = "../Data/ngrams_25.rdat")
+save(unigrams,bigrams,trigrams,quadgrams, file = "../Data/ngrams.rdat")
 ```
 
 Now we have our ngrams up to quadgrams saved in an ".rdat" file of only 2.9MB disk spacem whilst taking about 21MB when in RAM!!
