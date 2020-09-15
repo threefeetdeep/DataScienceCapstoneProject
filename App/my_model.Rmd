@@ -1,0 +1,190 @@
+---
+title: 'N-Gram Text Prediction Model '
+author: "Oli Bailey"
+date: "September, Year Of The Virus"
+output:
+  html_document:
+    theme: sandstone
+  pdf_document: default
+subtitle: 'Step 4. Develop A more Complex Model'
+---
+
+## NOTES:
+
+In the previous step, we decided that our best baseline model is a trigram model that achieved this benchmark:
+
+Overall top-3 score:     16.13 %
+Overall top-1 precision: 11.58 %
+Overall top-3 precision: 19.94 %
+Average runtime:         16.89 msec
+Number of predictions:   28464
+Total memory used:       9.51 MB
+
+This script concerns itself with the development and testing of a more complex model using interpolation and/or smoothing to try to imprve prediction precision.
+
+The first thing we'll try is to apply a preference for predictions from higher order ngrams over lower order, by increases a probability penalty as the ngrams reduces in size during backoff.
+
+
+
+```{r, load_libs, message=FALSE, warning=FALSE}
+library(dplyr)      # for wrangling
+library(magrittr)   # for piping
+library(stringr)    # for word to corpus str_c() function
+library(tidytext)   # for unnest_tokens()
+
+# remove any previous variables (clean start)
+rm(list = ls())
+```
+
+```{r, utility_functions}
+# Get object size in MB
+get_MB <- function(obj) {
+  format(object.size(obj),units="Mb")
+}
+
+# input is a sring, output is vector of first n words
+get_first_n_words <- function(s,n) {
+  str_to_lower(word(s, 1, n))
+}
+
+# input is a string, output is vector of last n words
+get_last_n_words <- function(s,n) {
+  str_to_lower(word(s, -n, -1))
+}
+
+# convert words not in our unigram vocab to "unkwn" token
+convert_oov <- function(words_to_check) {
+  ifelse(words_to_check %in% unigrams$ng_next, words_to_check,"unkwn")
+}
+  
+# function to clean a string, removing punctuation, replacing out-of-vocab words
+clean_string <- function(s) {
+  if (s == "") return (NULL)
+  # convert to single row data frame
+  s <- data.frame(text=s)
+  # use tidytext unnest_tokens to clean and split to words
+  s <- unnest_tokens(s, text, text) 
+  # replace OOV words with "unkwn"
+  s <- convert_oov(s$text)
+  
+  return(s)
+}
+```
+
+```{r, load_ngram tables, warning=FALSE}
+# load "corpus" variable
+load("../Data/ngrams_25.rdat")
+get_MB(unigrams); get_MB(bigrams); get_MB(trigrams); get_MB(quadgrams)
+
+rm(quadgrams)
+
+# ungroup the tables
+unigrams <- ungroup(unigrams); bigrams <- ungroup(bigrams); trigrams <- ungroup(trigrams)
+unigrams_head <- head(unigrams, 3)
+
+# load most common sentence starts
+sentence_start_words <- read.csv("../Data/top_ten_start_Words.txt")
+top_start_words <- sentence_start_words$WORD[1:3]
+```
+
+Here is our "probabilitly penalty" model, adapting the first simple model from the previous step. We'll reduce the probability of bigrams by PP % , and unigrams by another PP % i.e. PP^2 %. Note that since we have a negative log value of prob, we are going to simply multiply the prob column by (100 + PP)/100, to DECREASE the actual probability
+
+```{r, prob_penalty_model}
+prob_penalty_model <- function(s, as_table=FALSE, num_preds=3, penalty = 0.2) {
+  s <- clean_string(s)
+  num_words <- length(s)
+  
+  # is this a sentence start?
+  if (num_words == 0) {
+    return (top_start_words)
+  }
+  
+  # if one word get top matching bigrams and unigrams
+  if (num_words == 1) {
+    # 0-6 top matching bigrams
+    bi <- bigrams %>%  filter(ng_head==s) 
+    # top6 matching unigrams
+    uni <- unigrams_head
+    uni$prob <- as.integer(uni$prob * (1+penalty))
+    # combine
+    pred <- rbind(bi, uni)
+  } else {
+    # num_words must be 2 or more at this point, so find matching tri/bi/unigrams
+    last_two_words <- paste(s[length(s)-1:0], collapse = " ")
+    last_word <- get_last_n_words(last_two_words,1)
+    
+    # 0-6 top matching trigrams
+    tri <- trigrams %>% filter(ng_head==last_two_words)
+    # 0-6 top matching bigrams
+    bi <- bigrams %>% filter(ng_head==last_word) 
+    bi$prob <- as.integer(bi$prob * (1+penalty))
+    # top6 matching unigrams
+    uni <- unigrams_head 
+    uni$prob <- as.integer(uni$prob * (1+penalty)^2)
+    # combine
+    pred <- rbind(tri,bi,uni)
+  }
+  
+  # pick most common duplicate, sort most probable first
+  pred %<>% group_by(ng_next) %>% arrange(prob) %>% slice(1:1) %>% arrange(prob)
+  
+  if (as_table == FALSE) {return(head(pred$ng_next,num_preds))}
+  return(head(pred,num_preds))
+}
+```
+
+```{r, benchmark_small_penalty}
+# load benchmarking script
+source("Benchmarker/benchmark.R")
+
+# assign my model to the benchmark funciton
+predict.baseline <- prob_penalty_model
+
+# run the benchmark
+benchmark(predict.baseline, 
+          penalty=0.2,
+          # additional parameters to be passed to the prediction function can be inserted here
+          sent.list = list('tweets' = tweets, 
+                           'blogs' = blogs), 
+          ext.output = T)
+```
+-----------
+Overall top-3 score:     16.31 %
+Overall top-1 precision: 11.65 %
+Overall top-3 precision: 20.29 %
+Average runtime:         21.85 msec
+Number of predictions:   28464
+Total memory used:       9.60 MB
+
+We gained about 0.2%! Let's try a penalty of 0.4
+
+```{r, benchmark_larger_penalty}
+# load benchmarking script
+source("Benchmarker/benchmark.R")
+
+# assign my model to the benchmark funciton
+predict.baseline <- prob_penalty_model
+
+# run the benchmark
+benchmark(predict.baseline, 
+          penalty=0.4,
+          # additional parameters to be passed to the prediction function can be inserted here
+          sent.list = list('tweets' = tweets, 
+                           'blogs' = blogs), 
+          ext.output = T)
+```
+
+-------------
+Overall top-3 score:     16.36 %
+Overall top-1 precision: 11.72 %
+Overall top-3 precision: 20.30 %
+Average runtime:         21.23 msec
+Number of predictions:   28464
+Total memory used:       9.60 MB
+
+Looks like this is about as far as we can go with this simple penalty model that places a preference on predictions from higher order ngrams above those of lower order ones.
+
+
+
+
+
