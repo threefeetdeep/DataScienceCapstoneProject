@@ -12,10 +12,10 @@ Data Science Specialization Capstone Project
 "MyWord!": Making Typing Easier on Smartphones
 ========================================================
 
-[MyWord!](https://threefeetdeep.shinyapps.io/my_word) is a web app demo that accepts typed input and predicts the next word. The target for real-world application is smartphone messaging. This implies limited memory and processing power.
+[MyWord!](https://threefeetdeep.shinyapps.io/my_word) is a web app demo that accepts typed input and predicts the next word. The target for real-world application is smartphone messaging. This implies limited availability of memory and processing power to run our model in.
 
 - Ease of use: just start typing a sentence, the predicted next word is displayed when typing stops.
-- Good user experience: initialization typically within seconds, next word prediction in less than 0.1 sec.
+- Good user experience: rapid initialization;  next word prediction in less than 0.1 sec.
 - Acceptable accuracy: approx. 11-12% (top suggested word, N=700 tests).
 - Optional "QuadPower" mode (using quadgrams) to boost accuracy at expense of slight response time increase
 
@@ -27,7 +27,7 @@ Data Science Specialization Capstone Project
 - Very small memory footprint: 
   <br> < 4MB on flash/disk 
   <br> < 20MB in RAM
-- Written in "tidyverse" style - easy for developers to add new features
+- Written in "tidyverse" style using easily interpretable tibbles - easy for developers to add new features
 
 ***
 
@@ -55,15 +55,14 @@ Prediction Algorithm and Implementation
 Future Work & References
 ========================================================
 
-- Reduce memory even further using an indexed vocabulary of words, with n-grams tables referencing this using keys
+- Reduce memory even further using an indexed vocabulary of words, with n-gram tables referencing it using keys
 
-- Increase response time using data table instead of data frames (this also allow use of keys as above)
+- Increase response time using data table (as sparse matrices) instead of data frames (this also allow use of keys as above)
 
-- Add ability to handle common American-English and British-English spelling variants e.g. colour/color
+- Add the ability to handle common American-English and British-English spelling variants e.g. colour/color
 
-- Investigate if prediction accuracy improvements using smoothing approaches e.g. Kneser-Ney
+- Investigate prediction accuracy improvements using smoothing and interpolation approaches e.g. Kneser-Ney
 
-
-Code: [Github repo](https://github.com/threefeetdeep/DataScienceCapstoneProject) App: [MyWord app](https://threefeetdeep.shinyapps.io/my_word) Refs: [Original corpus](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip)
+Code: [Github repo](https://github.com/threefeetdeep/DataScienceCapstoneProject)  App: [MyWord app](https://threefeetdeep.shinyapps.io/my_word)  Refs: [Original Corpus](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip)
 
 <center>THANKS!</center>
