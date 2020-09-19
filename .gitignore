@@ -3,6 +3,10 @@ train_corpus*.rdat
 held_out_corpus*.rdat
 test_corpus*.rdat
 
+_InputCorpus/*
+_Archive/*
+
+
 #History files
 .Rhistory
 .Rapp.history
