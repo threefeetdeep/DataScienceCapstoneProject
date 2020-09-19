@@ -19,8 +19,9 @@ convert_oov <- function(words_to_check) {
   
 # function to clean a string, removing punctuation, replacing out-of-vocab words
 clean_string <- function(s) {
-  # check if no chars, or last char is a fullstop i.e. new sentence
-  if (s == "" | str_sub(s,-1,-1)==".") return (NULL)
+  # check if no chars, or last char is a fullstop, exclamation or question mark
+  # i.e.  a new sentence
+  if (s == "" | str_detect(s,"(!|\\?|\\.) *$")) return (NULL)
   # convert to single row data frame
   s <- data.frame(text=s)
   # use tidytext unnest_tokens to clean and split to words
@@ -42,13 +43,15 @@ load("../Data/ngrams.rdat")
 # ungroup the tables
 unigrams <- ungroup(unigrams); bigrams <- ungroup(bigrams); trigrams <- ungroup(trigrams)
 unigrams_head <- head(unigrams, 3)
-top_start_words <- c("I","The","You","We","I'm")
+
+# capitalize sentence start words
+sentence_starts$ng_next <- str_to_title(sentence_starts$ng_next)
 
 
 # **************************************
 #         PREDICTION FUNCTION
 # **************************************
-prob_penalty_model <- function(s, as_table=F, num_preds=3, penalty = 0.2, quad = F) {
+prob_penalty_model <- function(s, num_preds=3, penalty = 0.2, quad = F) {
   # check num_preds is in range 1 to 6
   if (num_preds < 1 | num_preds > 6) num_preds = 3
 
@@ -58,7 +61,7 @@ prob_penalty_model <- function(s, as_table=F, num_preds=3, penalty = 0.2, quad =
   
   # is this the sentence start?
   if (num_words == 0) {
-    return (top_start_words[1:num_preds])
+    return (sentence_starts[1:num_preds,])
   }
   
   # if one word get top matching bigrams and unigrams
@@ -109,6 +112,5 @@ prob_penalty_model <- function(s, as_table=F, num_preds=3, penalty = 0.2, quad =
   # pick most common duplicate, sort most probable first
   pred %<>% group_by(ng_next) %>% arrange(prob) %>% slice(1:1) %>% arrange(prob)
   
-  if (as_table == FALSE) {return(head(pred$ng_next,num_preds))}
   return(head(pred,num_preds))
 }

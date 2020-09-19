@@ -47,14 +47,7 @@ get_last_n_words <- function(s,n) {
 load("../Data/train_corpus.rdat")
 ```
 
-My model will not use information from any previous sentences to predict the start of the next. Instead we'll just offer the most frequenct sentence starts from our corpora:
-```{r, common_line_starts}
-(most_common_start <- str_match(corpus$text, "^[a-z'-]+") %>%
-  freq_terms %>% 
-  filter(WORD != "na") %>%
-  head(10))
-write.csv(x=most_common_start, "../Data/top_ten_start_Words.txt")
-```
+
 
 Here we'll use the tidytext package to "word" tokenize the corpus, and create ngram tables.
 
@@ -216,11 +209,33 @@ get_MB(bigrams); get_MB(trigrams); get_MB(quadgrams)
 # add empty ng_head column to unigrams tro match higher ngrams
 unigrams %<>% mutate(ng_head=NA)
 unigrams %<>% select(n,ng_head,ng_next,prob)
-
-#save ngrams
-save(unigrams,bigrams,trigrams,quadgrams, file = "../Data/ngrams.rdat")
 ```
 
-Now we have our ngrams up to quadgrams saved in an ".rdat" file of only 2.9MB disk spacem whilst taking about 21MB when in RAM!!
+My model will not use information from any previous sentences to predict the start of the next. Instead we'll just offer the most frequenct sentence starts from our corpora:
+```{r, common_line_starts}
+(sentence_starts <- str_match(corpus$text, "^[a-z'-]+") %>%
+  freq_terms %>% 
+  filter(WORD != "na" & WORD != "unkwn") %>%
+  head(6))
+
+# number of sentences in train corpus
+n <- nrow(corpus)
+
+# add probabilities
+sentence_starts %<>% mutate(prob = -floor(4000*log(FREQ/n)))
+
+# format table into same columns as ngram tables (n, ng_next,ng_head,prob)
+colnames(sentence_starts) <- c("ng_next", "n","prob")
+sentence_starts %<>% mutate(ng_head=NA)
+sentence_starts %<>% select(n,ng_head,ng_next,prob)
+```
+
+Now save the ngram and sentence start tables for use by the Shiny App.
+```{r, save_ngrams_data}
+#save ngrams
+save(unigrams,bigrams,trigrams,quadgrams, sentence_starts, file = "../Data/ngrams.rdat")
+```
+
+Our ngrams up to quadgrams are now saved in an ".rdat" file of only 2.9MB disk space whilst taking about 21MB when in RAM.
 
 The next steps are to prototype a basic model of ngram back off down to the unigram level. We'll not use any smoothing/discounting just yet, just to keep things simple at first, in the next file, "prototype_simple_models.Rmd"

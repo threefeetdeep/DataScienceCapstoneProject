@@ -3,33 +3,35 @@
 source("my_model.R")
 
 # define server
-shinyServer(function(input, output) {
+shinyServer(function(input, output, session) {
+  
   
   # define reactive variable to hold user input
   user_data <- reactive({
     data.frame(num_suggestions = input$num_suggestions,
                phrase = input$message,
-               mode = input$quad_power_mode)
+               mode = input$quad_power_mode,
+               show = input$show_prob_table)
   })
   
   # define reactive variable to hold prediction
   predict_words <- reactive({
-    new_data <- user_data()
-    predictions <- c("the","dog","ate","my","homework","sir")
-    prob_penalty_model(s = new_data$phrase,
-                       num_preds=new_data$num_suggestions)
+    settings <- user_data()
+    predictions <- prob_penalty_model(s = settings$phrase,
+                       num_preds=settings$num_suggestions,
+                       quad = settings$mode)
+    return (list(pred_table = predictions,data = settings))
   })
   
   # create output for prediction as text
   output$predicted_words <- renderText({
     p <- predict_words()
-   
-    # string <- NULL
-    # for (i in 1:length(words)) {
-    #   string <- c(string, words[[i]], sep = "&nbsp;&nbsp;&nbsp;")
-    # }
-    # HTML(string)
-    paste(p[1:3], collapse=" ")
+    pred_table <- p$pred_table
+    paste(pred_table$ng_next, collapse=" ")
+  })
+  
+  observeEvent(input$clear_text, {
+    updateTextInput(session, "message", value = "")
   })
   
 

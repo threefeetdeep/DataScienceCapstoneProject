@@ -21,12 +21,12 @@ shinyUI(fluidPage(
                 value = "" # 
       ),
       
+      tags$br(actionButton("clear_text", "Clear Message")),
+      tags$br(switchInput("quad_power_mode","QuadPower(TM)", offStatus = "danger")),
+      tags$br(switchInput("show_prob_table","Show Table", offStatus = "blue")),
+      tags$br(sliderInput("num_suggestions", "Number of suggestions:", 
+                  min=1, max=6, value=3)),
       
-      switchInput("quad_power_mode","QuadPower(TM)", offStatus = "danger"),
-      
-      sliderInput("num_suggestions", "Number of suggestions:", 
-                  min=1, max=6, value=3)
-
     ), 
     
     mainPanel(
