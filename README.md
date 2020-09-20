@@ -7,6 +7,8 @@ Aug-Sept 2020.
 The main goal of the project is to design a Shiny application that takes as input a partial (incomplete) English sentence and predicts the next word in the sentence. You may want to start by taking a look at the app. In that case, please remember to read the instructions in the Documentation tab of the app before using it. The app can be found at:
 http://threefeetdeep.shinyapps.io/?
 
+A slide deck presentation that overviews the project has been published to Rpubs here: https://rpubs.com/ojaybee/663258
+
 
 Project top level folder structure and information about data files:<br>
 |<br>
