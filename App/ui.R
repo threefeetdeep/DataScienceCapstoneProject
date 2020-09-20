@@ -2,17 +2,10 @@ library(shiny)
 library(shinyWidgets)
 # Define UI for application that draws a histogram
 shinyUI(fluidPage(
-  
-  # tags$head(
-  #   tags$link(rel = "stylesheet", type = "text/css", href = "bootstrap.css")
-  # ),
-  
-  # Application title
+
   titlePanel("MyWord! N-Gram Text Prediction Demo App"),
   
-  # Sidebar with a slider input for the number of bins
   sidebarLayout(
-    
     sidebarPanel(
 
       h3("Compose Message"),
@@ -23,26 +16,24 @@ shinyUI(fluidPage(
       
       tags$br(actionButton("clear_text", "Clear Message")),
       tags$br(switchInput("quad_power_mode","QuadPower(TM)", offStatus = "danger")),
-      tags$br(switchInput("show_prob_table","Show Table", offStatus = "blue")),
+      tags$br(switchInput("show_diagnostics","Diagnostics", offStatus = "danger")),
       tags$br(sliderInput("num_suggestions", "Number of suggestions:", 
                   min=1, max=6, value=3)),
-      
     ), 
     
     mainPanel(
       tabsetPanel(
         tabPanel(
           "Prediction",
-          HTML("<span style='color:#203040'>"),
+          HTML("<span style='color:#F00030'>"),
           h3(textOutput("predicted_words"), align="center"),
           HTML("</span>"),
           br(),
-          h4(textOutput("kText")),
           hr(),
-          div(dataTableOutput("prediction_table"), style='font-size:150%')        
+          div(tableOutput("prediction_table"),style='font-size:150%')
         ),
         tabPanel("About",
-                 #includeMarkdown("about.Rmd")
+                 includeMarkdown("about.Rmd")
         )
       )
     )

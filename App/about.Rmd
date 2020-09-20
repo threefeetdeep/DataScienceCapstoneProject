@@ -1,0 +1,47 @@
+## MyWord!
+
+This Shiny App is a demonstration of a next-word prediction model using an N-gram language model, targetted for use in a smartphone messaging app.
+
+This Shiny app was developed for the *Capstone Project*  of the 
+[Johns Hopkins Coursera Data Science 
+Specialization](https://www.coursera.org/specialization/jhudatascience/1?utm_medium=listingPage). 
+
+
+
+###  How to use the application.
+
+- The user their message in the **Compose Message** field on the left
+
+- The **predicted words** appear in red in the "Prediction" tab of this pane. 
+
+- A **toggle switch** on the left switches to QuadPower&trade mode, in which the model shifts up a gear to use quadgrams instead of the default trigram model
+
+- If diagnsotic mode is selected using the second <strong>toggle switch</strong>,a table of the most probable words, and their assigned probabilities is shown.
+
+
+- A **slider** on the left controls the number of predicted words (up to 6).
+
+
+
+### How does it work?
+
+In short, the model takes the last few words of a sentence (a 4-gram if four words are used, 3-gram for three words, etc.) and uses statistics about a large collection of English sentences to find the most probable next word, given that set of sentences.
+
+Technically, the probabilities displayed by the app are assigned using a <a href="http://en.wikipedia.org/wiki/N-gram">4-gram model</a> but without smoothing, and only a primitive "Stupid Back Off" policy. 
+
+
+The resulting language model is stored in a single data file. The complete 4-gram model size is only 3MB in disk space and about 21MB once in RAM, as the app is optimized for smartphone application, where memory and CPU power are lower (typically!) than with conventional PCs.
+
+
+
+### References and GitHub Repository. ###
+
+- The GitHub repository with further documentation for this app can be found at:  
+[https://github.com/fthreefeetdeep/DataScienceCapstoneProject](https://github.com/threefeetdeep/DataScienceCapstoneProject)
+
+- Martin, J. H., & Jurafsky, D. (2009). Speech and language processing. Pearson International Edition. ISBN 978-0135041963
+
+- Stanford Coursera Course for Natural Language Pro`cessing (https://www.coursera.org/course/nlp)
+
+
+

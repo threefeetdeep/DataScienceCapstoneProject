@@ -1,0 +1,12 @@
+name: my_word
+title: my_word
+username:
+account: threefeetdeep
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2847833
+bundleId: 3649205
+url: https://threefeetdeep.shinyapps.io/my_word/
+when: 1600618326.79588
+asMultiple: FALSE
+asStatic: FALSE

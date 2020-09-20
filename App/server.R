@@ -1,29 +1,32 @@
 # server.R -- Create back end for word prediction app
 
+# Load the prediction model
 source("my_model.R")
 
 # define server
 shinyServer(function(input, output, session) {
   
-  
-  # define reactive variable to hold user input
+  # user input as reactive variable
   user_data <- reactive({
     data.frame(num_suggestions = input$num_suggestions,
                phrase = input$message,
                mode = input$quad_power_mode,
-               show = input$show_prob_table)
+               show = input$show_diagnostics)
   })
   
-  # define reactive variable to hold prediction
+  # predicted word table as reactive variable
   predict_words <- reactive({
     settings <- user_data()
     predictions <- prob_penalty_model(s = settings$phrase,
                        num_preds=settings$num_suggestions,
+                       penalty = 0.2,
                        quad = settings$mode)
-    return (list(pred_table = predictions,data = settings))
+    
+    return (list(pred_table = predictions,
+                 settings = settings))
   })
   
-  # create output for prediction as text
+  # render the predicted output
   output$predicted_words <- renderText({
     p <- predict_words()
     pred_table <- p$pred_table
@@ -33,7 +36,24 @@ shinyServer(function(input, output, session) {
   observeEvent(input$clear_text, {
     updateTextInput(session, "message", value = "")
   })
+    
+
+   output$prediction_table <-renderTable({
+     p <- predict_words()
+     settings <- p$settings
+     
+     if (settings$show==TRUE) {
+       p$pred_table %>%
+         select(ng_head, ng_next, n, prob) %>%
+         mutate(prob = exp(-prob/4000)) -> table_to_show
+    
+       colnames(table_to_show) <- c("Ngram Head","Predicted","Frequency", "Probability")
+    
+       table_to_show
+     }
+  })
+
+})
   
 
   
-})
