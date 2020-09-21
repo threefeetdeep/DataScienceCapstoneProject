@@ -1,7 +1,8 @@
 Capstone Project of the Coursera JHU Data Science Specialization
 Next word prediction using an N-gram Model
 
-Oliver Bailey (threefeetdeep
+Oliver Bailey (threefeetdeep)
+
 Aug-Sept 2020.
 
 The main goal of the project is to design a Shiny application that takes as input a partial (incomplete) English sentence and predicts the next word in the sentence. You may want to start by taking a look at the app. In that case, please remember to read the instructions in the Documentation tab of the app before using it. The app can be found at:
