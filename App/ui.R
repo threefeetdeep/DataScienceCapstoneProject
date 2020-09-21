@@ -15,8 +15,8 @@ shinyUI(fluidPage(
       ),
       
       tags$br(actionButton("clear_text", "Clear Message")),
-      tags$br(switchInput("quad_power_mode","QuadPower(TM)", offStatus = "danger")),
-      tags$br(switchInput("show_diagnostics","Diagnostics", offStatus = "danger")),
+      tags$br(switchInput("quad_power_mode","QuadPower\U2122", offStatus = "danger")),
+      switchInput("show_diagnostics","Diagnostics", offStatus = "danger"),
       tags$br(sliderInput("num_suggestions", "Number of suggestions:", 
                   min=1, max=6, value=3)),
     ), 

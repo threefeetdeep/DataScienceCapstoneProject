@@ -16,7 +16,7 @@ Specialization](https://www.coursera.org/specialization/jhudatascience/1?utm_med
 
 - After each inputted word, the **predicted words** appear in red in the "Prediction" tab of this pane. 
 
-- A **toggle switch** on the left switches to QuadPower&trade mode, in which the model shifts up a gear to use quadgrams instead of the default trigram model
+- A **toggle switch** on the left switches to QuadPower™ mode, in which the model shifts up a gear to use quadgrams instead of the default trigram model
 
 - If diagnsotic mode is selected using the second <strong>toggle switch</strong>,a table of the most probable words, and their assigned probabilities is shown.
 
