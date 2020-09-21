@@ -38,17 +38,25 @@ shinyServer(function(input, output, session) {
   })
     
 
-   output$prediction_table <-renderTable({
+   output$prediction_table <-renderTable(
+     digits=3, 
+     {
      p <- predict_words()
      settings <- p$settings
      
+     # only show table if "Show" mode is selected
      if (settings$show==TRUE) {
        p$pred_table %>%
          select(ng_head, ng_next, n, prob) %>%
          mutate(prob = exp(-prob/4000)) -> table_to_show
     
+       # rename columns to human-friendly names
        colnames(table_to_show) <- c("Ngram Head","Predicted","Frequency", "Probability")
-    
+       
+       # convert Frequency col to character to prevent decimal place being added
+       table_to_show$Frequency <- as.character(table_to_show$Frequency)
+       
+       # show table
        table_to_show
      }
   })

@@ -20,7 +20,7 @@ Average runtime:         16.89 msec
 Number of predictions:   28464
 Total memory used:       9.51 MB
 
-This script concerns itself with the development and testing of a more complex model using interpolation and/or smoothing to try to imprve prediction precision.
+This script concerns itself with the development and testing of a more complex model.
 
 The first thing we'll try is to apply a preference for predictions from higher order ngrams over lower order, by increases a probability penalty as the ngrams reduces in size during backoff.
 
@@ -183,6 +183,9 @@ Number of predictions:   28464
 Total memory used:       9.60 MB
 
 Looks like this is about as far as we can go with this simple penalty model that places a preference on predictions from higher order ngrams above those of lower order ones.
+
+
+
 
 
 

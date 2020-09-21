@@ -5,8 +5,8 @@ account: threefeetdeep
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 2847833
-bundleId: 3649205
+bundleId: 3651775
 url: https://threefeetdeep.shinyapps.io/my_word/
-when: 1600618326.79588
+when: 1600680881.10581
 asMultiple: FALSE
 asStatic: FALSE
